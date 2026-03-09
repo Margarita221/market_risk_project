@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 
+#Instrument class
 
 class Instrument(models.Model):
     ticker = models.CharField(max_length=20, unique=True, verbose_name='Тикер')
@@ -19,6 +20,8 @@ class Instrument(models.Model):
     def __str__(self):
         return f'{self.ticker} - {self.name}'
 
+#Portfolio class
+
 class Portfolio(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='portfolios')
     name = models.CharField(max_length=150)
@@ -32,6 +35,8 @@ class Portfolio(models.Model):
 
     def __str__(self):
         return self.name
+
+#PortfolioPosition
 
 class PortfolioPosition(models.Model):
     portfolio = models.ForeignKey(
@@ -57,6 +62,7 @@ class PortfolioPosition(models.Model):
     def __str__(self):
         return f"{self.portfolio} - {self.instrument}"
 
+#Scenario class
 
 class Scenario(models.Model):
     user = models.ForeignKey(
@@ -85,6 +91,9 @@ class Scenario(models.Model):
 
     def __str__(self):
         return self.name
+
+#SimulationResult class
+
 class SimulationResult(models.Model):
     scenario = models.ForeignKey(
         Scenario,
@@ -106,3 +115,29 @@ class SimulationResult(models.Model):
     def __str__(self):
         return f"Result #{self.id} for {self.scenario.name}"
 
+#RiskMetric class
+
+class RiskMetric(models.Model):
+    simulation_result = models.ForeignKey(
+        SimulationResult,
+        on_delete=models.CASCADE,
+        related_name="risk_metrics"
+    )
+
+    metric_name = models.CharField(max_length=100)
+    metric_value = models.DecimalField(max_digits=15, decimal_places=6)
+    confidence_level = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
+
+    calculated_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "risk_metric"
+        ordering = ["metric_name"]
+
+    def __str__(self):
+        return f"{self.metric_name}: {self.metric_value}"

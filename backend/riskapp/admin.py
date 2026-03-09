@@ -1,5 +1,10 @@
 from django.contrib import admin
-from .models import Instrument, Portfolio, PortfolioPosition, Scenario, SimulationResult
+from .models import Instrument, Portfolio, PortfolioPosition, Scenario, SimulationResult, RiskMetric
+
+
+@admin.register(RiskMetric)
+class RiskMetricAdmin(admin.ModelAdmin):
+    list_display = ("metric_name", "metric_value", "simulation_result")
 
 
 @admin.register(Instrument)

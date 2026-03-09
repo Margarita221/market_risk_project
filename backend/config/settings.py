@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv(BASE_DIR / ".env", encoding="utf-8")
+load_dotenv(BASE_DIR / ".env", encoding="utf-8", override=True)
 
 
 # Quick-start development settings - unsuitable for production
@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'riskapp',
 ]
 
 MIDDLEWARE = [

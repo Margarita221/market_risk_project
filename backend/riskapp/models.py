@@ -32,3 +32,27 @@ class Portfolio(models.Model):
 
     def __str__(self):
         return self.name
+
+class PortfolioPosition(models.Model):
+    portfolio = models.ForeignKey(
+        Portfolio,
+        on_delete=models.CASCADE,
+        related_name='positions'
+    )
+
+    instrument = models.ForeignKey(
+        Instrument,
+        on_delete=models.CASCADE
+    )
+
+    quantity = models.DecimalField(max_digits=15, decimal_places=4)
+    average_purchase_price = models.DecimalField(max_digits=15, decimal_places=4)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'portfolio_position'
+        unique_together = ('portfolio', 'instrument')
+
+    def __str__(self):
+        return f"{self.portfolio} - {self.instrument}"

@@ -183,6 +183,10 @@
             grid-column: span 8;
         }
 
+        .span-12 {
+            grid-column: span 12;
+        }
+
         .card {
             padding: 22px;
         }
@@ -293,6 +297,45 @@
             color: var(--ink);
         }
 
+        select,
+        textarea {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 12px 14px;
+            background: white;
+            font: inherit;
+            color: var(--ink);
+        }
+
+        textarea {
+            resize: vertical;
+        }
+
+        .form-actions,
+        .page-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        .field-error,
+        .errorlist {
+            color: var(--accent-dark);
+        }
+
+        .errorlist {
+            margin: 6px 0 0;
+            padding-left: 18px;
+        }
+
+        .hint {
+            color: var(--muted);
+            font-size: 0.88rem;
+        }
+
         .empty {
             padding: 28px;
             border: 1px dashed var(--line);
@@ -310,7 +353,8 @@
             .span-3,
             .span-4,
             .span-6,
-            .span-8 {
+            .span-8,
+            .span-12 {
                 grid-column: span 12;
             }
         }

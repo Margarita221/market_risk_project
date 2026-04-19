@@ -65,6 +65,32 @@
     </article>
 
     <article class="card span-4">
+        <h2>{% t "add_position" %}</h2>
+        <p class="muted">{% t "add_position_subtitle" %}</p>
+        <form method="post" action="{% url 'riskapp:portfolio_add_position' portfolio.id %}" class="form-card">
+            {% csrf_token %}
+            {{ position_form.non_field_errors }}
+            <label>
+                {% t "instrument" %}
+                {{ position_form.instrument }}
+                {{ position_form.instrument.errors }}
+            </label>
+            <label>
+                {% t "quantity" %}
+                {{ position_form.quantity }}
+                {{ position_form.quantity.errors }}
+            </label>
+            <label>
+                {% t "purchase_price" %}
+                {{ position_form.average_purchase_price }}
+                <span class="hint">{% t "purchase_price_hint" %}</span>
+                {{ position_form.average_purchase_price.errors }}
+            </label>
+            <button type="submit" class="button button-primary">{% t "add_to_portfolio" %}</button>
+        </form>
+    </article>
+
+    <article class="card span-12">
         <h2>{% t "scenarios" %}</h2>
         {% if scenarios %}
             {% for scenario in scenarios %}

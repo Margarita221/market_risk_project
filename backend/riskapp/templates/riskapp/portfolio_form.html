@@ -1,0 +1,33 @@
+{% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
+
+{% block title %}{% t "create_portfolio" %} | {% t "site_name" %}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="section-kicker">{% t "create_portfolio_kicker" %}</div>
+    <h1>{% t "create_portfolio" %}</h1>
+    <p class="muted">{% t "create_portfolio_subtitle" %}</p>
+</section>
+
+<section class="card">
+    <form method="post" class="form-card">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <label>
+            {% t "portfolio_name" %}
+            {{ form.name }}
+            {{ form.name.errors }}
+        </label>
+        <label>
+            {% t "description" %}
+            {{ form.description }}
+            {{ form.description.errors }}
+        </label>
+        <div class="form-actions">
+            <button type="submit" class="button button-primary">{% t "save_portfolio" %}</button>
+            <a class="button button-secondary" href="{% url 'riskapp:portfolios' %}">{% t "cancel" %}</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

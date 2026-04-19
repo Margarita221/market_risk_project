@@ -132,3 +132,35 @@ class RiskAppWebUiTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(SimulationResult.objects.filter(scenario=self.scenario).count(), 1)
+
+    def test_user_can_create_portfolio_from_web(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post("/portfolios/create/", {
+            "name": "Created from UI",
+            "description": "Created portfolio description",
+        })
+
+        portfolio = Portfolio.objects.get(name="Created from UI")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(portfolio.user, self.user)
+        self.assertEqual(portfolio.initial_value, Decimal("0"))
+
+    def test_user_can_add_position_to_portfolio_from_web(self):
+        self.client.force_login(self.user)
+        portfolio = Portfolio.objects.create(
+            user=self.user,
+            name="Position target",
+            initial_value=Decimal("0.00"),
+        )
+
+        response = self.client.post(f"/portfolios/{portfolio.id}/positions/add/", {
+            "instrument": self.instrument.id,
+            "quantity": "3.0000",
+            "average_purchase_price": "48.0000",
+        })
+
+        position = PortfolioPosition.objects.get(portfolio=portfolio, instrument=self.instrument)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(position.quantity, Decimal("3.0000"))
+        self.assertEqual(position.average_purchase_price, Decimal("48.0000"))

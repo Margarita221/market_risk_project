@@ -15,7 +15,8 @@ class InstrumentAdmin(admin.ModelAdmin):
 
 @admin.register(Portfolio)
 class PortfolioAdmin(admin.ModelAdmin):
-    list_display = ("name", "user", "initial_value", "created_at")
+    list_display = ("name", "user", "initial_value", "current_value", "created_at", "updated_at")
+    readonly_fields = ("current_value",)
 
 
 @admin.register(PortfolioPosition)

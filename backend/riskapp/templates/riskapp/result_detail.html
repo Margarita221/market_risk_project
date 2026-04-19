@@ -1,0 +1,74 @@
+{% extends "riskapp/base.html" %}
+
+{% block title %}Simulation Result · Market Risk{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="section-kicker">Simulation result</div>
+    <h1>{{ result.scenario.name }}</h1>
+    <p class="muted">
+        Portfolio:
+        <a href="{% url 'riskapp:portfolio_detail' result.scenario.portfolio_id %}">{{ result.scenario.portfolio.name }}</a>.
+        Executed {{ result.execution_time|date:"Y-m-d H:i" }}.
+    </p>
+</section>
+
+<section class="grid">
+    <article class="card span-3">
+        <div class="section-kicker">Expected return</div>
+        <div class="metric">{{ result.expected_return|floatformat:4 }}</div>
+    </article>
+    <article class="card span-3">
+        <div class="section-kicker">Volatility</div>
+        <div class="metric">{{ result.portfolio_volatility|floatformat:4 }}</div>
+    </article>
+    <article class="card span-3">
+        <div class="section-kicker">Final value</div>
+        <div class="metric">{{ result.final_value|floatformat:2 }}</div>
+    </article>
+    <article class="card span-3">
+        <div class="section-kicker">Max drawdown</div>
+        <div class="metric">{{ result.max_drawdown|floatformat:4 }}</div>
+    </article>
+
+    <article class="card span-8">
+        <h2>Risk Metrics</h2>
+        {% if metrics %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>Value</th>
+                            <th>Confidence</th>
+                            <th>Calculated</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for metric in metrics %}
+                            <tr>
+                                <td>{{ metric.metric_name }}</td>
+                                <td>{{ metric.metric_value|floatformat:6 }}</td>
+                                <td>{{ metric.confidence_level|default:"-" }}</td>
+                                <td>{{ metric.calculated_at|date:"Y-m-d H:i" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty">No metrics were saved for this result.</div>
+        {% endif %}
+    </article>
+
+    <article class="card span-4">
+        <h2>Run Notes</h2>
+        <p class="muted">{{ result.comment|default:"No comment saved." }}</p>
+        <p><span class="pill">{{ result.status }}</span></p>
+        <form method="post" action="{% url 'riskapp:run_scenario' result.scenario_id %}">
+            {% csrf_token %}
+            <button type="submit" class="button button-secondary">Run again</button>
+        </form>
+    </article>
+</section>
+{% endblock %}

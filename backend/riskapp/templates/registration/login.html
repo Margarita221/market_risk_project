@@ -1,0 +1,28 @@
+{% extends "riskapp/base.html" %}
+
+{% block title %}Sign In{% endblock %}
+
+{% block content %}
+<section class="auth-panel">
+    <div class="section-kicker">Secure workspace</div>
+    <h1>Sign in to Market Risk</h1>
+    <p class="muted">Use your Django account to work with portfolios, scenarios and simulation results.</p>
+
+    {% if form.errors %}
+        <div class="message message-error">Invalid username or password.</div>
+    {% endif %}
+
+    <form method="post" class="form-card">
+        {% csrf_token %}
+        <label>
+            Username
+            {{ form.username }}
+        </label>
+        <label>
+            Password
+            {{ form.password }}
+        </label>
+        <button type="submit" class="button button-primary">Sign in</button>
+    </form>
+</section>
+{% endblock %}

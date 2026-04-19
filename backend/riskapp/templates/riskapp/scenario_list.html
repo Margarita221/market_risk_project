@@ -1,0 +1,53 @@
+{% extends "riskapp/base.html" %}
+
+{% block title %}Scenarios · Market Risk{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="section-kicker">Market assumptions</div>
+    <h1>Scenarios</h1>
+    <p class="muted">Run annualized trend, volatility and noise assumptions against your portfolios.</p>
+</section>
+
+<section class="card">
+    {% if scenarios %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Portfolio</th>
+                        <th>Trend</th>
+                        <th>Volatility</th>
+                        <th>Horizon</th>
+                        <th>Iterations</th>
+                        <th>Results</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for scenario in scenarios %}
+                        <tr>
+                            <td>{{ scenario.name }}</td>
+                            <td><a href="{% url 'riskapp:portfolio_detail' scenario.portfolio_id %}">{{ scenario.portfolio.name }}</a></td>
+                            <td>{{ scenario.trend|floatformat:4 }}</td>
+                            <td>{{ scenario.volatility|floatformat:4 }}</td>
+                            <td>{{ scenario.time_horizon }} days</td>
+                            <td>{{ scenario.iterations_count }}</td>
+                            <td><span class="pill">{{ scenario.results_count }}</span></td>
+                            <td>
+                                <form method="post" action="{% url 'riskapp:run_scenario' scenario.id %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="button button-primary">Run</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty">No scenarios available for this user.</div>
+    {% endif %}
+</section>
+{% endblock %}

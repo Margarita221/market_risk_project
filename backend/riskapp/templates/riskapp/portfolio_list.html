@@ -1,0 +1,42 @@
+{% extends "riskapp/base.html" %}
+
+{% block title %}Portfolios · Market Risk{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="section-kicker">Investment structure</div>
+    <h1>Portfolios</h1>
+    <p class="muted">Current values are updated by PostgreSQL triggers when positions or instrument prices change.</p>
+</section>
+
+<section class="card">
+    {% if portfolios %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Positions</th>
+                        <th>Initial value</th>
+                        <th>Current value</th>
+                        <th>Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for portfolio in portfolios %}
+                        <tr>
+                            <td><a href="{% url 'riskapp:portfolio_detail' portfolio.id %}">{{ portfolio.name }}</a></td>
+                            <td>{{ portfolio.positions_count }}</td>
+                            <td>{{ portfolio.initial_value|floatformat:2 }}</td>
+                            <td>{{ portfolio.current_value|floatformat:2 }}</td>
+                            <td>{{ portfolio.updated_at|date:"Y-m-d H:i" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty">No portfolios available for this user.</div>
+    {% endif %}
+</section>
+{% endblock %}

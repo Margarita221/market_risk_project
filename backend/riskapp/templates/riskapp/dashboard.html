@@ -1,0 +1,90 @@
+{% extends "riskapp/base.html" %}
+
+{% block title %}Dashboard · Market Risk{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="section-kicker">Risk control room</div>
+    <h1>Portfolio risk modelling workspace</h1>
+    <p class="muted">Track portfolio value, run market scenarios and review saved risk metrics from one Django interface.</p>
+</section>
+
+<section class="grid">
+    <article class="card span-3">
+        <div class="section-kicker">Portfolios</div>
+        <div class="metric">{{ portfolios_count }}</div>
+    </article>
+    <article class="card span-3">
+        <div class="section-kicker">Scenarios</div>
+        <div class="metric">{{ scenarios_count }}</div>
+    </article>
+    <article class="card span-3">
+        <div class="section-kicker">Results</div>
+        <div class="metric">{{ results_count }}</div>
+    </article>
+    <article class="card span-3">
+        <div class="section-kicker">Current value</div>
+        <div class="metric">{{ total_current_value|floatformat:2 }}</div>
+    </article>
+
+    <article class="card span-6">
+        <h2>Latest Portfolios</h2>
+        {% if latest_portfolios %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Initial</th>
+                            <th>Current</th>
+                            <th>Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for portfolio in latest_portfolios %}
+                            <tr>
+                                <td><a href="{% url 'riskapp:portfolio_detail' portfolio.id %}">{{ portfolio.name }}</a></td>
+                                <td>{{ portfolio.initial_value|floatformat:2 }}</td>
+                                <td>{{ portfolio.current_value|floatformat:2 }}</td>
+                                <td>{{ portfolio.updated_at|date:"Y-m-d H:i" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty">No portfolios yet. Create one in Django Admin to begin.</div>
+        {% endif %}
+    </article>
+
+    <article class="card span-6">
+        <h2>Latest Results</h2>
+        {% if latest_results %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Scenario</th>
+                            <th>Return</th>
+                            <th>Volatility</th>
+                            <th>Opened</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for result in latest_results %}
+                            <tr>
+                                <td><a href="{% url 'riskapp:result_detail' result.id %}">{{ result.scenario.name }}</a></td>
+                                <td>{{ result.expected_return|floatformat:4 }}</td>
+                                <td>{{ result.portfolio_volatility|floatformat:4 }}</td>
+                                <td>{{ result.execution_time|date:"Y-m-d H:i" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty">No simulation results yet. Run a scenario to create the first result.</div>
+        {% endif %}
+    </article>
+</section>
+{% endblock %}

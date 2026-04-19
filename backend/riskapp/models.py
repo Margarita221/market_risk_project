@@ -116,6 +116,10 @@ class Scenario(models.Model):
                 name='scenario_volatility_gte_0'
             ),
             models.CheckConstraint(
+                condition=Q(noise_level__gte=0),
+                name='scenario_noise_level_gte_0'
+            ),
+            models.CheckConstraint(
                 condition=Q(time_horizon__gt=0),
                 name='scenario_time_horizon_gt_0'
             ),

@@ -1,47 +1,48 @@
 {% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
 
-{% block title %}Simulation Result · Market Risk{% endblock %}
+{% block title %}{% t "result_title" %} | {% t "site_name" %}{% endblock %}
 
 {% block content %}
 <section class="hero">
-    <div class="section-kicker">Simulation result</div>
+    <div class="section-kicker">{% t "result_kicker" %}</div>
     <h1>{{ result.scenario.name }}</h1>
     <p class="muted">
-        Portfolio:
+        {% t "portfolio" %}:
         <a href="{% url 'riskapp:portfolio_detail' result.scenario.portfolio_id %}">{{ result.scenario.portfolio.name }}</a>.
-        Executed {{ result.execution_time|date:"Y-m-d H:i" }}.
+        {% t "executed" %} {{ result.execution_time|date:"Y-m-d H:i" }}.
     </p>
 </section>
 
 <section class="grid">
     <article class="card span-3">
-        <div class="section-kicker">Expected return</div>
+        <div class="section-kicker">{% t "expected_return" %}</div>
         <div class="metric">{{ result.expected_return|floatformat:4 }}</div>
     </article>
     <article class="card span-3">
-        <div class="section-kicker">Volatility</div>
+        <div class="section-kicker">{% t "volatility" %}</div>
         <div class="metric">{{ result.portfolio_volatility|floatformat:4 }}</div>
     </article>
     <article class="card span-3">
-        <div class="section-kicker">Final value</div>
+        <div class="section-kicker">{% t "final_value" %}</div>
         <div class="metric">{{ result.final_value|floatformat:2 }}</div>
     </article>
     <article class="card span-3">
-        <div class="section-kicker">Max drawdown</div>
+        <div class="section-kicker">{% t "max_drawdown" %}</div>
         <div class="metric">{{ result.max_drawdown|floatformat:4 }}</div>
     </article>
 
     <article class="card span-8">
-        <h2>Risk Metrics</h2>
+        <h2>{% t "risk_metrics" %}</h2>
         {% if metrics %}
             <div class="table-wrap">
                 <table>
                     <thead>
                         <tr>
-                            <th>Metric</th>
-                            <th>Value</th>
-                            <th>Confidence</th>
-                            <th>Calculated</th>
+                            <th>{% t "metric" %}</th>
+                            <th>{% t "value" %}</th>
+                            <th>{% t "confidence" %}</th>
+                            <th>{% t "calculated" %}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -57,17 +58,23 @@
                 </table>
             </div>
         {% else %}
-            <div class="empty">No metrics were saved for this result.</div>
+            <div class="empty">{% t "no_metrics" %}</div>
         {% endif %}
     </article>
 
     <article class="card span-4">
-        <h2>Run Notes</h2>
-        <p class="muted">{{ result.comment|default:"No comment saved." }}</p>
+        <h2>{% t "run_notes" %}</h2>
+        <p class="muted">
+            {% if result.comment %}
+                {{ result.comment }}
+            {% else %}
+                {% t "no_comment" %}
+            {% endif %}
+        </p>
         <p><span class="pill">{{ result.status }}</span></p>
         <form method="post" action="{% url 'riskapp:run_scenario' result.scenario_id %}">
             {% csrf_token %}
-            <button type="submit" class="button button-secondary">Run again</button>
+            <button type="submit" class="button button-secondary">{% t "run_again" %}</button>
         </form>
     </article>
 </section>

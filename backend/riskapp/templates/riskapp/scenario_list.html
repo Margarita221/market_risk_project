@@ -1,12 +1,13 @@
 {% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
 
-{% block title %}Scenarios · Market Risk{% endblock %}
+{% block title %}{% t "scenario_list_title" %} | {% t "site_name" %}{% endblock %}
 
 {% block content %}
 <section class="hero">
-    <div class="section-kicker">Market assumptions</div>
-    <h1>Scenarios</h1>
-    <p class="muted">Run annualized trend, volatility and noise assumptions against your portfolios.</p>
+    <div class="section-kicker">{% t "scenario_list_kicker" %}</div>
+    <h1>{% t "scenario_list_title" %}</h1>
+    <p class="muted">{% t "scenario_list_subtitle" %}</p>
 </section>
 
 <section class="card">
@@ -15,14 +16,14 @@
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Portfolio</th>
-                        <th>Trend</th>
-                        <th>Volatility</th>
-                        <th>Horizon</th>
-                        <th>Iterations</th>
-                        <th>Results</th>
-                        <th>Action</th>
+                        <th>{% t "name" %}</th>
+                        <th>{% t "portfolio" %}</th>
+                        <th>{% t "trend" %}</th>
+                        <th>{% t "volatility" %}</th>
+                        <th>{% t "horizon" %}</th>
+                        <th>{% t "iterations" %}</th>
+                        <th>{% t "results" %}</th>
+                        <th>{% t "action" %}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -32,13 +33,13 @@
                             <td><a href="{% url 'riskapp:portfolio_detail' scenario.portfolio_id %}">{{ scenario.portfolio.name }}</a></td>
                             <td>{{ scenario.trend|floatformat:4 }}</td>
                             <td>{{ scenario.volatility|floatformat:4 }}</td>
-                            <td>{{ scenario.time_horizon }} days</td>
+                            <td>{{ scenario.time_horizon }} {% t "days" %}</td>
                             <td>{{ scenario.iterations_count }}</td>
                             <td><span class="pill">{{ scenario.results_count }}</span></td>
                             <td>
                                 <form method="post" action="{% url 'riskapp:run_scenario' scenario.id %}">
                                     {% csrf_token %}
-                                    <button type="submit" class="button button-primary">Run</button>
+                                    <button type="submit" class="button button-primary">{% t "run" %}</button>
                                 </form>
                             </td>
                         </tr>
@@ -47,7 +48,7 @@
             </table>
         </div>
     {% else %}
-        <div class="empty">No scenarios available for this user.</div>
+        <div class="empty">{% t "no_scenarios_for_user" %}</div>
     {% endif %}
 </section>
 {% endblock %}

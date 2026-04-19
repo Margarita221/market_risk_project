@@ -1,28 +1,29 @@
 {% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
 
-{% block title %}Sign In{% endblock %}
+{% block title %}{% t "login_title" %} | {% t "site_name" %}{% endblock %}
 
 {% block content %}
 <section class="auth-panel">
-    <div class="section-kicker">Secure workspace</div>
-    <h1>Sign in to Market Risk</h1>
-    <p class="muted">Use your Django account to work with portfolios, scenarios and simulation results.</p>
+    <div class="section-kicker">{% t "login_kicker" %}</div>
+    <h1>{% t "login_heading" %}</h1>
+    <p class="muted">{% t "login_subtitle" %}</p>
 
     {% if form.errors %}
-        <div class="message message-error">Invalid username or password.</div>
+        <div class="message message-error">{% t "login_error" %}</div>
     {% endif %}
 
     <form method="post" class="form-card">
         {% csrf_token %}
         <label>
-            Username
+            {% t "username" %}
             {{ form.username }}
         </label>
         <label>
-            Password
+            {% t "password" %}
             {{ form.password }}
         </label>
-        <button type="submit" class="button button-primary">Sign in</button>
+        <button type="submit" class="button button-primary">{% t "nav_sign_in" %}</button>
     </form>
 </section>
 {% endblock %}

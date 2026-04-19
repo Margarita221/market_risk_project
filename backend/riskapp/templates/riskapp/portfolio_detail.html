@@ -1,41 +1,48 @@
 {% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
 
-{% block title %}{{ portfolio.name }} · Market Risk{% endblock %}
+{% block title %}{{ portfolio.name }} | {% t "site_name" %}{% endblock %}
 
 {% block content %}
 <section class="hero">
-    <div class="section-kicker">Portfolio detail</div>
+    <div class="section-kicker">{% t "portfolio_detail_kicker" %}</div>
     <h1>{{ portfolio.name }}</h1>
-    <p class="muted">{{ portfolio.description|default:"No description provided." }}</p>
+    <p class="muted">
+        {% if portfolio.description %}
+            {{ portfolio.description }}
+        {% else %}
+            {% t "no_description" %}
+        {% endif %}
+    </p>
 </section>
 
 <section class="grid">
     <article class="card span-4">
-        <div class="section-kicker">Initial value</div>
+        <div class="section-kicker">{% t "initial_value" %}</div>
         <div class="metric">{{ portfolio.initial_value|floatformat:2 }}</div>
     </article>
     <article class="card span-4">
-        <div class="section-kicker">Current value</div>
+        <div class="section-kicker">{% t "current_value" %}</div>
         <div class="metric">{{ portfolio.current_value|floatformat:2 }}</div>
     </article>
     <article class="card span-4">
-        <div class="section-kicker">Updated</div>
+        <div class="section-kicker">{% t "updated" %}</div>
         <div class="metric" style="font-size: 1.75rem;">{{ portfolio.updated_at|date:"Y-m-d H:i" }}</div>
     </article>
 
     <article class="card span-8">
-        <h2>Positions</h2>
+        <h2>{% t "positions" %}</h2>
         {% if positions %}
             <div class="table-wrap">
                 <table>
                     <thead>
                         <tr>
-                            <th>Ticker</th>
-                            <th>Type</th>
-                            <th>Currency</th>
-                            <th>Quantity</th>
-                            <th>Price</th>
-                            <th>Position value</th>
+                            <th>{% t "ticker" %}</th>
+                            <th>{% t "type" %}</th>
+                            <th>{% t "currency" %}</th>
+                            <th>{% t "quantity" %}</th>
+                            <th>{% t "price" %}</th>
+                            <th>{% t "position_value" %}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -53,25 +60,25 @@
                 </table>
             </div>
         {% else %}
-            <div class="empty">This portfolio has no positions yet.</div>
+            <div class="empty">{% t "no_positions" %}</div>
         {% endif %}
     </article>
 
     <article class="card span-4">
-        <h2>Scenarios</h2>
+        <h2>{% t "scenarios" %}</h2>
         {% if scenarios %}
             {% for scenario in scenarios %}
                 <div style="padding: 16px 0; border-bottom: 1px solid var(--line);">
                     <h3>{{ scenario.name }}</h3>
-                    <p class="muted">Trend {{ scenario.trend|floatformat:4 }}, volatility {{ scenario.volatility|floatformat:4 }}</p>
+                    <p class="muted">{% t "trend" %} {{ scenario.trend|floatformat:4 }}, {% t "volatility" %} {{ scenario.volatility|floatformat:4 }}</p>
                     <form method="post" action="{% url 'riskapp:run_scenario' scenario.id %}">
                         {% csrf_token %}
-                        <button type="submit" class="button button-primary">Run simulation</button>
+                        <button type="submit" class="button button-primary">{% t "run_simulation" %}</button>
                     </form>
                 </div>
             {% endfor %}
         {% else %}
-            <div class="empty">No scenarios are attached to this portfolio.</div>
+            <div class="empty">{% t "no_scenarios_for_portfolio" %}</div>
         {% endif %}
     </article>
 </section>

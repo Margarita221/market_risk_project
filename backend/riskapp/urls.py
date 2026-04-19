@@ -7,6 +7,7 @@ app_name = "riskapp"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("language/<str:language>/", views.switch_language, name="switch_language"),
     path("portfolios/", views.portfolio_list, name="portfolios"),
     path("portfolios/<int:portfolio_id>/", views.portfolio_detail, name="portfolio_detail"),
     path("scenarios/", views.scenario_list, name="scenarios"),

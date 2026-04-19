@@ -1,12 +1,13 @@
 {% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
 
-{% block title %}Portfolios · Market Risk{% endblock %}
+{% block title %}{% t "portfolio_list_title" %} | {% t "site_name" %}{% endblock %}
 
 {% block content %}
 <section class="hero">
-    <div class="section-kicker">Investment structure</div>
-    <h1>Portfolios</h1>
-    <p class="muted">Current values are updated by PostgreSQL triggers when positions or instrument prices change.</p>
+    <div class="section-kicker">{% t "portfolio_list_kicker" %}</div>
+    <h1>{% t "portfolio_list_title" %}</h1>
+    <p class="muted">{% t "portfolio_list_subtitle" %}</p>
 </section>
 
 <section class="card">
@@ -15,11 +16,11 @@
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Positions</th>
-                        <th>Initial value</th>
-                        <th>Current value</th>
-                        <th>Updated</th>
+                        <th>{% t "name" %}</th>
+                        <th>{% t "positions" %}</th>
+                        <th>{% t "initial_value" %}</th>
+                        <th>{% t "current_value" %}</th>
+                        <th>{% t "updated" %}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -36,7 +37,7 @@
             </table>
         </div>
     {% else %}
-        <div class="empty">No portfolios available for this user.</div>
+        <div class="empty">{% t "no_portfolios_for_user" %}</div>
     {% endif %}
 </section>
 {% endblock %}

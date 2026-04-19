@@ -114,6 +114,15 @@ class RiskAppWebUiTests(TestCase):
         response = self.client.get("/")
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Рабочее пространство моделирования портфельных рисков")
+
+    def test_user_can_switch_ui_language_to_english(self):
+        self.client.force_login(self.user)
+
+        self.client.get("/language/en/")
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Portfolio risk modelling workspace")
 
     def test_run_scenario_view_creates_result(self):

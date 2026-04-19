@@ -1,11 +1,22 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum
+from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
+from riskapp.i18n import get_request_language, normalize_language, translate
 from riskapp.models import Portfolio, PortfolioPosition, Scenario, SimulationResult
 from riskapp.services.simulation import run_scenario_simulation
+
+
+def switch_language(request, language):
+    normalized_language = normalize_language(language)
+    if normalized_language != language:
+        return HttpResponseBadRequest("Unsupported language")
+
+    request.session["ui_language"] = normalized_language
+    return redirect(request.META.get("HTTP_REFERER") or reverse("riskapp:dashboard"))
 
 
 @login_required
@@ -90,10 +101,14 @@ def run_scenario(request, scenario_id):
     try:
         summary = run_scenario_simulation(scenario.id)
     except ValueError as exc:
-        messages.error(request, str(exc))
+        message = translate("empty_portfolio_error", get_request_language(request))
+        messages.error(request, message or str(exc))
         return redirect(reverse("riskapp:portfolio_detail", args=[scenario.portfolio_id]))
 
-    messages.success(request, f"Scenario '{scenario.name}' completed successfully.")
+    messages.success(
+        request,
+        translate("scenario_completed", get_request_language(request), name=scenario.name),
+    )
     return redirect(reverse("riskapp:result_detail", args=[summary.result.id]))
 
 

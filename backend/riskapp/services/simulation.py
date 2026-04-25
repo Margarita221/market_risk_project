@@ -11,6 +11,8 @@ from riskapp.models import RiskMetric, Scenario, SimulationResult
 
 DECIMAL_2 = Decimal("0.01")
 DECIMAL_6 = Decimal("0.000001")
+MAX_CHART_POINTS = 160
+SAMPLE_PATHS_LIMIT = 7
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,10 @@ def get_portfolio_start_value(scenario):
     return total_value
 
 
+def get_portfolio_positions(scenario):
+    return list(scenario.portfolio.positions.select_related("instrument").order_by("instrument__ticker"))
+
+
 def build_price_path(start_value, trend, volatility, noise_level, steps, generator):
     values = [start_value]
     current_value = start_value
@@ -69,6 +75,44 @@ def build_price_path(start_value, trend, volatility, noise_level, steps, generat
     return values
 
 
+def combine_paths(paths):
+    return [sum(values) for values in zip(*paths)]
+
+
+def downsample_path(values, max_points=MAX_CHART_POINTS):
+    if len(values) <= max_points:
+        return values
+
+    last_index = len(values) - 1
+    indexes = sorted({
+        round(index * last_index / (max_points - 1))
+        for index in range(max_points)
+    })
+    return [values[index] for index in indexes]
+
+
+def downsample_indexes(length, max_points=MAX_CHART_POINTS):
+    if length <= max_points:
+        return list(range(length))
+
+    last_index = length - 1
+    return sorted({
+        round(index * last_index / (max_points - 1))
+        for index in range(max_points)
+    })
+
+
+def format_chart_path(values):
+    return [float(quantize_decimal(value, DECIMAL_2)) for value in downsample_path(values)]
+
+
+def format_chart_labels(values_length, step_days):
+    return [
+        int(round(index * step_days))
+        for index in downsample_indexes(values_length)
+    ]
+
+
 @transaction.atomic
 def run_scenario_simulation(scenario_id, seed=None):
     scenario = (
@@ -78,6 +122,7 @@ def run_scenario_simulation(scenario_id, seed=None):
         .get(pk=scenario_id)
     )
 
+    positions = get_portfolio_positions(scenario)
     start_value = get_portfolio_start_value(scenario)
     if start_value <= 0:
         raise ValueError("Portfolio has no positive current value to simulate.")
@@ -96,20 +141,46 @@ def run_scenario_simulation(scenario_id, seed=None):
     final_values = []
     iteration_returns = []
     max_drawdowns = []
+    path_sums = [0.0] * (steps + 1)
+    position_path_sums = {
+        position.id: [0.0] * (steps + 1)
+        for position in positions
+    }
+    position_sample_paths = {}
+    sample_paths = []
 
     for _ in range(iterations_count):
-        path = build_price_path(
-            start_value=start_value_float,
-            trend=trend_per_step,
-            volatility=volatility_per_step,
-            noise_level=noise_per_step,
-            steps=steps,
-            generator=generator,
-        )
-        final_value = path[-1]
+        position_paths = []
+
+        for position in positions:
+            position_start_value = float(Decimal(position.quantity) * Decimal(position.instrument.current_price))
+            position_path = build_price_path(
+                start_value=position_start_value,
+                trend=trend_per_step,
+                volatility=volatility_per_step,
+                noise_level=noise_per_step,
+                steps=steps,
+                generator=generator,
+            )
+            position_paths.append(position_path)
+
+            for index, value in enumerate(position_path):
+                position_path_sums[position.id][index] += value
+
+            if position.id not in position_sample_paths:
+                position_sample_paths[position.id] = position_path
+
+        portfolio_path = combine_paths(position_paths)
+        final_value = portfolio_path[-1]
         final_values.append(final_value)
         iteration_returns.append((final_value - start_value_float) / start_value_float)
-        max_drawdowns.append(calculate_max_drawdown(path))
+        max_drawdowns.append(calculate_max_drawdown(portfolio_path))
+
+        for index, value in enumerate(portfolio_path):
+            path_sums[index] += value
+
+        if len(sample_paths) < SAMPLE_PATHS_LIMIT:
+            sample_paths.append(format_chart_path(portfolio_path))
 
     expected_return = mean(iteration_returns)
     portfolio_volatility = pstdev(iteration_returns) if len(iteration_returns) > 1 else 0.0
@@ -122,6 +193,32 @@ def run_scenario_simulation(scenario_id, seed=None):
     tail_returns_95 = [value for value in sorted_returns if value <= tail_cutoff_95]
     conditional_var_95 = abs(mean(tail_returns_95)) if tail_returns_95 else value_at_risk_95
     sharpe_ratio = expected_return / portfolio_volatility if portfolio_volatility else 0.0
+    average_path = [value / iterations_count for value in path_sums]
+    best_final_value = max(final_values)
+    worst_final_value = min(final_values)
+    position_paths = []
+
+    for position in positions:
+        position_start_value = Decimal(position.quantity) * Decimal(position.instrument.current_price)
+        average_position_path = [value / iterations_count for value in position_path_sums[position.id]]
+        chart_position_path = position_sample_paths.get(position.id, average_position_path)
+        final_position_value = chart_position_path[-1]
+        position_return = (
+            (final_position_value - float(position_start_value)) / float(position_start_value)
+            if position_start_value > 0
+            else 0.0
+        )
+        position_paths.append({
+            "ticker": position.instrument.ticker,
+            "name": position.instrument.name,
+            "currency": position.instrument.currency,
+            "quantity": position.quantity,
+            "start_value": float(quantize_decimal(position_start_value, DECIMAL_2)),
+            "final_value": float(quantize_decimal(final_position_value, DECIMAL_2)),
+            "return_percent": float(quantize_decimal(position_return * 100)),
+            "values": format_chart_path(chart_position_path),
+            "average_values": format_chart_path(average_position_path),
+        })
 
     result = SimulationResult.objects.create(
         scenario=scenario,
@@ -134,6 +231,20 @@ def run_scenario_simulation(scenario_id, seed=None):
             f"Simulated {iterations_count} iterations with {steps} steps. "
             f"Start value: {start_value.quantize(DECIMAL_2)}."
         ),
+        chart_data={
+            "labels": format_chart_labels(len(average_path), step_days),
+            "average_path": format_chart_path(average_path),
+            "sample_paths": sample_paths,
+            "position_paths": position_paths,
+            "start_value": float(start_value.quantize(DECIMAL_2)),
+            "average_final_value": float(quantize_decimal(average_final_value, DECIMAL_2)),
+            "best_final_value": float(quantize_decimal(best_final_value, DECIMAL_2)),
+            "worst_final_value": float(quantize_decimal(worst_final_value, DECIMAL_2)),
+            "expected_return_percent": float(quantize_decimal(expected_return * 100)),
+            "max_drawdown_percent": float(quantize_decimal(max_drawdown * 100)),
+            "steps": steps,
+            "iterations": iterations_count,
+        },
     )
 
     metrics = RiskMetric.objects.bulk_create([

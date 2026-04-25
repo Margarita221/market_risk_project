@@ -336,6 +336,97 @@
             font-size: 0.88rem;
         }
 
+        .chart-panel {
+            position: relative;
+            min-height: 390px;
+        }
+
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .chart-wrap {
+            position: relative;
+            min-width: 0;
+        }
+
+        .chart-canvas {
+            width: 100%;
+            height: 360px;
+            display: block;
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,250,240,0.58));
+        }
+
+        .chart-tooltip {
+            position: absolute;
+            z-index: 3;
+            min-width: 150px;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: rgba(255, 250, 240, 0.96);
+            box-shadow: 0 14px 34px rgba(50, 36, 20, 0.16);
+            color: var(--ink);
+            font-size: 0.9rem;
+            pointer-events: none;
+            opacity: 0;
+            transform: translate(-50%, -110%);
+            transition: opacity 120ms ease;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 14px 0 0;
+            color: var(--muted);
+        }
+
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-line {
+            width: 30px;
+            height: 3px;
+            border-radius: 999px;
+            background: var(--accent);
+        }
+
+        .legend-line.sample {
+            background: #2d5f88;
+            opacity: 0.42;
+        }
+
+        .scenario-controls {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            margin-top: 18px;
+        }
+
+        .scenario-controls .wide {
+            grid-column: span 2;
+        }
+
+        .range-control {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 150px;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type="range"] {
+            padding: 0;
+            accent-color: var(--accent);
+        }
+
         .empty {
             padding: 28px;
             border: 1px dashed var(--line);
@@ -357,6 +448,19 @@
             .span-12 {
                 grid-column: span 12;
             }
+
+            .chart-grid,
+            .scenario-controls {
+                grid-template-columns: 1fr;
+            }
+
+            .scenario-controls .wide {
+                grid-column: span 1;
+            }
+
+            .range-control {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -374,7 +478,9 @@
                     <a href="{% url 'riskapp:dashboard' %}">{% t "nav_dashboard" %}</a>
                     <a href="{% url 'riskapp:portfolios' %}">{% t "nav_portfolios" %}</a>
                     <a href="{% url 'riskapp:scenarios' %}">{% t "nav_scenarios" %}</a>
-                    <a href="{% url 'admin:index' %}">{% t "nav_admin" %}</a>
+                    {% if user.is_staff or user.is_superuser %}
+                        <a href="{% url 'admin:index' %}">{% t "nav_admin" %}</a>
+                    {% endif %}
                     <form method="post" action="{% url 'logout' %}">
                         {% csrf_token %}
                         <button type="submit">{% t "nav_logout" %}</button>

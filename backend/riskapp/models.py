@@ -60,7 +60,7 @@ class PortfolioPosition(models.Model):
         Instrument,
         on_delete=models.CASCADE
     )
-    quantity = models.DecimalField(max_digits=15, decimal_places=4)
+    quantity = models.PositiveIntegerField()
     average_purchase_price = models.DecimalField(max_digits=15, decimal_places=4)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -150,6 +150,7 @@ class SimulationResult(models.Model):
     max_drawdown = models.DecimalField(max_digits=12, decimal_places=6)
     status = models.CharField(max_length=30)
     comment = models.TextField(blank=True)
+    chart_data = models.JSONField(default=dict, blank=True)
 
     class Meta:
         db_table = 'simulation_result'

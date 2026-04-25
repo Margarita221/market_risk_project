@@ -14,6 +14,13 @@
             {% t "no_description" %}
         {% endif %}
     </p>
+    <div class="page-actions">
+        <a class="button button-secondary" href="{% url 'riskapp:portfolio_update' portfolio.id %}">{% t "edit_portfolio" %}</a>
+        <form method="post" action="{% url 'riskapp:portfolio_delete' portfolio.id %}" onsubmit="return confirm('{% t "confirm_delete_portfolio" %}');">
+            {% csrf_token %}
+            <button type="submit" class="button button-secondary">{% t "delete_portfolio" %}</button>
+        </form>
+    </div>
 </section>
 
 <section class="grid">
@@ -41,8 +48,9 @@
                             <th>{% t "type" %}</th>
                             <th>{% t "currency" %}</th>
                             <th>{% t "quantity" %}</th>
-                            <th>{% t "price" %}</th>
+                            <th>{% t "market_price" %}</th>
                             <th>{% t "position_value" %}</th>
+                            <th>{% t "action" %}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -51,9 +59,20 @@
                                 <td>{{ position.instrument.ticker }}</td>
                                 <td>{{ position.instrument.instrument_type }}</td>
                                 <td>{{ position.instrument.currency }}</td>
-                                <td>{{ position.quantity|floatformat:4 }}</td>
+                                <td>{{ position.quantity }}</td>
                                 <td>{{ position.instrument.current_price|floatformat:4 }}</td>
                                 <td>{{ position.position_value|floatformat:2 }}</td>
+                                <td>
+                                    <form method="post" action="{% url 'riskapp:portfolio_position_update' portfolio.id position.id %}" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                        {% csrf_token %}
+                                        <input type="number" name="quantity" min="1" value="{{ position.quantity }}" style="max-width: 110px;">
+                                        <button type="submit" class="button button-secondary">{% t "save" %}</button>
+                                    </form>
+                                    <form method="post" action="{% url 'riskapp:portfolio_position_delete' portfolio.id position.id %}" onsubmit="return confirm('{% t "confirm_delete_position" %}');" style="margin-top: 8px;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="button button-secondary">{% t "delete" %}</button>
+                                    </form>
+                                </td>
                             </tr>
                         {% endfor %}
                     </tbody>
@@ -80,13 +99,60 @@
                 {{ position_form.quantity }}
                 {{ position_form.quantity.errors }}
             </label>
-            <label>
-                {% t "purchase_price" %}
-                {{ position_form.average_purchase_price }}
-                <span class="hint">{% t "purchase_price_hint" %}</span>
-                {{ position_form.average_purchase_price.errors }}
-            </label>
+            <span class="hint">{% t "market_price_hint" %}</span>
             <button type="submit" class="button button-primary">{% t "add_to_portfolio" %}</button>
+        </form>
+    </article>
+
+    <article class="card span-12">
+        <h2>{% t "scenario_builder" %}</h2>
+        <p class="muted">{% t "scenario_builder_subtitle" %}</p>
+        <form method="post" action="{% url 'riskapp:portfolio_scenario_run' portfolio.id %}" class="form-card scenario-form">
+            {% csrf_token %}
+            {{ scenario_form.non_field_errors }}
+            <div class="scenario-controls">
+                <label>
+                    {% t "name" %}
+                    {{ scenario_form.name }}
+                    {{ scenario_form.name.errors }}
+                </label>
+                <label>
+                    {% t "description" %}
+                    {{ scenario_form.description }}
+                    {{ scenario_form.description.errors }}
+                </label>
+                <label>
+                    {% t "trend" %}
+                    <span class="range-control">{{ scenario_form.trend }}</span>
+                    {{ scenario_form.trend.errors }}
+                </label>
+                <label>
+                    {% t "volatility" %}
+                    <span class="range-control">{{ scenario_form.volatility }}</span>
+                    {{ scenario_form.volatility.errors }}
+                </label>
+                <label>
+                    {% t "noise_level" %}
+                    <span class="range-control">{{ scenario_form.noise_level }}</span>
+                    {{ scenario_form.noise_level.errors }}
+                </label>
+                <label>
+                    {% t "horizon" %}
+                    <span class="range-control">{{ scenario_form.time_horizon }}</span>
+                    {{ scenario_form.time_horizon.errors }}
+                </label>
+                <label>
+                    {% t "time_step" %}
+                    <span class="range-control">{{ scenario_form.time_step }}</span>
+                    {{ scenario_form.time_step.errors }}
+                </label>
+                <label>
+                    {% t "iterations" %}
+                    <span class="range-control">{{ scenario_form.iterations_count }}</span>
+                    {{ scenario_form.iterations_count.errors }}
+                </label>
+            </div>
+            <button type="submit" class="button button-primary">{% t "save_and_run_scenario" %}</button>
         </form>
     </article>
 
@@ -108,4 +174,25 @@
         {% endif %}
     </article>
 </section>
+<script>
+    (() => {
+        document.querySelectorAll(".scenario-form input[data-slider-min]").forEach((numberInput) => {
+            const slider = document.createElement("input");
+            slider.type = "range";
+            slider.min = numberInput.dataset.sliderMin;
+            slider.max = numberInput.dataset.sliderMax;
+            slider.step = numberInput.dataset.sliderStep;
+            slider.value = numberInput.value || slider.min;
+            slider.setAttribute("aria-hidden", "true");
+            numberInput.parentElement.insertBefore(slider, numberInput);
+
+            slider.addEventListener("input", () => {
+                numberInput.value = slider.value;
+            });
+            numberInput.addEventListener("input", () => {
+                slider.value = numberInput.value;
+            });
+        });
+    })();
+</script>
 {% endblock %}

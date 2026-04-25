@@ -32,6 +32,55 @@
         <div class="metric">{{ result.max_drawdown|floatformat:4 }}</div>
     </article>
 
+    <article class="card span-12 chart-panel">
+        <h2>{% t "simulation_charts" %}</h2>
+        <p class="muted">{% t "simulation_chart_subtitle" %}</p>
+        {% if result.chart_data %}
+            {{ result.chart_data|json_script:"simulation-chart-data" }}
+            <div class="chart-grid">
+                <div>
+                    <h3>{% t "portfolio_value_chart" %}</h3>
+                    <div class="chart-wrap">
+                        <canvas id="portfolio-chart" class="chart-canvas"></canvas>
+                        <div id="portfolio-chart-tooltip" class="chart-tooltip"></div>
+                    </div>
+                </div>
+                <div>
+                    <h3>{% t "positions_value_chart" %}</h3>
+                    <div class="chart-wrap">
+                        <canvas id="positions-chart" class="chart-canvas"></canvas>
+                        <div id="positions-chart-tooltip" class="chart-tooltip"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="legend">
+                <span class="legend-item"><span class="legend-line"></span>{% t "portfolio_average_path" %}</span>
+                <span class="legend-item"><span class="legend-line sample"></span>{% t "position_paths" %}</span>
+            </div>
+        {% else %}
+            <div class="empty">{% t "no_chart_data" %}</div>
+        {% endif %}
+    </article>
+
+    {% if result.chart_data %}
+        <article class="card span-3">
+            <div class="section-kicker">{% t "start_value" %}</div>
+            <div class="metric">{{ result.chart_data.start_value|floatformat:2 }}</div>
+        </article>
+        <article class="card span-3">
+            <div class="section-kicker">{% t "average_final_value" %}</div>
+            <div class="metric">{{ result.chart_data.average_final_value|floatformat:2 }}</div>
+        </article>
+        <article class="card span-3">
+            <div class="section-kicker">{% t "best_final_value" %}</div>
+            <div class="metric">{{ result.chart_data.best_final_value|floatformat:2 }}</div>
+        </article>
+        <article class="card span-3">
+            <div class="section-kicker">{% t "worst_final_value" %}</div>
+            <div class="metric">{{ result.chart_data.worst_final_value|floatformat:2 }}</div>
+        </article>
+    {% endif %}
+
     <article class="card span-8">
         <h2>{% t "risk_metrics" %}</h2>
         {% if metrics %}
@@ -77,5 +126,251 @@
             <button type="submit" class="button button-secondary">{% t "run_again" %}</button>
         </form>
     </article>
+
+    <article class="card span-12">
+        <h2>{% t "scenario_settings" %}</h2>
+        <p class="muted">{% t "scenario_settings_subtitle" %}</p>
+        <form method="post" action="{% url 'riskapp:run_scenario' result.scenario_id %}" class="form-card scenario-form">
+            {% csrf_token %}
+            {{ scenario_form.non_field_errors }}
+            <div class="scenario-controls">
+                <label>
+                    {% t "name" %}
+                    {{ scenario_form.name }}
+                    {{ scenario_form.name.errors }}
+                </label>
+                <label>
+                    {% t "description" %}
+                    {{ scenario_form.description }}
+                    {{ scenario_form.description.errors }}
+                </label>
+                <label>
+                    {% t "trend" %}
+                    <span class="range-control">{{ scenario_form.trend }}</span>
+                    {{ scenario_form.trend.errors }}
+                </label>
+                <label>
+                    {% t "volatility" %}
+                    <span class="range-control">{{ scenario_form.volatility }}</span>
+                    {{ scenario_form.volatility.errors }}
+                </label>
+                <label>
+                    {% t "noise_level" %}
+                    <span class="range-control">{{ scenario_form.noise_level }}</span>
+                    {{ scenario_form.noise_level.errors }}
+                </label>
+                <label>
+                    {% t "horizon" %}
+                    <span class="range-control">{{ scenario_form.time_horizon }}</span>
+                    {{ scenario_form.time_horizon.errors }}
+                </label>
+                <label>
+                    {% t "time_step" %}
+                    <span class="range-control">{{ scenario_form.time_step }}</span>
+                    {{ scenario_form.time_step.errors }}
+                </label>
+                <label>
+                    {% t "iterations" %}
+                    <span class="range-control">{{ scenario_form.iterations_count }}</span>
+                    {{ scenario_form.iterations_count.errors }}
+                </label>
+            </div>
+            <button type="submit" class="button button-primary">{% t "apply_and_run_scenario" %}</button>
+        </form>
+    </article>
 </section>
+
+{% if result.chart_data %}
+<script>
+    (() => {
+        const payload = JSON.parse(document.getElementById("simulation-chart-data").textContent);
+        const labels = payload.labels || [];
+        const palette = ["#b5462d", "#2d5f88", "#2f7d55", "#7b4fa3", "#c5872d", "#2b7f7f", "#8b3f52", "#4f6742"];
+
+        const resizeCanvas = (canvas, context) => {
+            const ratio = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * ratio;
+            canvas.height = rect.height * ratio;
+            context.setTransform(ratio, 0, 0, ratio, 0, 0);
+        };
+
+        const formatMoney = (value) => Number(value).toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+            minimumFractionDigits: 2,
+        });
+
+        const drawChart = ({ canvasId, tooltipId, series, yLabel }) => {
+            const canvas = document.getElementById(canvasId);
+            const tooltip = document.getElementById(tooltipId);
+            const context = canvas.getContext("2d");
+            const paths = series.map((item) => item.values).filter((path) => path.length > 1);
+
+            if (!paths.length) {
+                return;
+            }
+
+            const padding = { top: 24, right: 24, bottom: 42, left: 66 };
+            const allValues = paths.flat();
+            const rawMin = Math.min(...allValues);
+            const rawMax = Math.max(...allValues);
+            const rangePadding = Math.max((rawMax - rawMin) * 0.08, 1);
+            const minValue = Math.max(0, rawMin - rangePadding);
+            const maxValue = rawMax + rangePadding;
+            const valueRange = Math.max(maxValue - minValue, 1);
+
+            const getPoint = (path, index, rect) => {
+                const drawableWidth = rect.width - padding.left - padding.right;
+                const drawableHeight = rect.height - padding.top - padding.bottom;
+                return {
+                    x: padding.left + (index / (path.length - 1)) * drawableWidth,
+                    y: padding.top + (1 - ((path[index] - minValue) / valueRange)) * drawableHeight,
+                };
+            };
+
+            const drawAxes = (rect) => {
+                context.clearRect(0, 0, rect.width, rect.height);
+                context.strokeStyle = "rgba(23, 33, 27, 0.16)";
+                context.fillStyle = "rgba(23, 33, 27, 0.66)";
+                context.lineWidth = 1;
+                context.font = "12px Georgia, 'Times New Roman', serif";
+
+                for (let index = 0; index <= 4; index += 1) {
+                    const y = padding.top + ((rect.height - padding.top - padding.bottom) * index / 4);
+                    const value = maxValue - (valueRange * index / 4);
+                    context.beginPath();
+                    context.moveTo(padding.left, y);
+                    context.lineTo(rect.width - padding.right, y);
+                    context.stroke();
+                    context.fillText(formatMoney(value), 8, y + 4);
+                }
+
+                const startLabel = labels[0] ?? 0;
+                const endLabel = labels[labels.length - 1] ?? series[0].values.length - 1;
+                context.fillText(`${startLabel} d`, padding.left, rect.height - 14);
+                context.fillText(`${endLabel} d`, rect.width - padding.right - 46, rect.height - 14);
+                context.save();
+                context.translate(18, rect.height / 2 + 44);
+                context.rotate(-Math.PI / 2);
+                context.fillText(yLabel, 0, 0);
+                context.restore();
+            };
+
+            const drawSeries = () => {
+                const rect = canvas.getBoundingClientRect();
+                drawAxes(rect);
+                series.forEach((item) => {
+                    context.beginPath();
+                    context.lineWidth = item.width || 3;
+                    context.strokeStyle = item.color;
+                    context.globalAlpha = item.alpha || 1;
+
+                    item.values.forEach((_, index) => {
+                        const point = getPoint(item.values, index, rect);
+                        if (index === 0) {
+                            context.moveTo(point.x, point.y);
+                        } else {
+                            context.lineTo(point.x, point.y);
+                        }
+                    });
+
+                    context.stroke();
+                    context.globalAlpha = 1;
+                });
+            };
+
+            const showTooltip = (event) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const mouseY = event.clientY - rect.top;
+                const drawableWidth = rect.width - padding.left - padding.right;
+                const firstSeries = series[0];
+                const index = Math.max(
+                    0,
+                    Math.min(
+                        firstSeries.values.length - 1,
+                        Math.round(((x - padding.left) / drawableWidth) * (firstSeries.values.length - 1)),
+                    ),
+                );
+                const nearest = series
+                    .map((item) => ({ item, point: getPoint(item.values, index, rect), value: item.values[index] }))
+                    .sort((a, b) => Math.abs(a.point.y - mouseY) - Math.abs(b.point.y - mouseY))[0];
+
+                if (!nearest) {
+                    return;
+                }
+
+                drawSeries();
+                context.fillStyle = nearest.item.color;
+                context.beginPath();
+                context.arc(nearest.point.x, nearest.point.y, 5, 0, Math.PI * 2);
+                context.fill();
+
+                tooltip.innerHTML = `<strong>${nearest.item.label}</strong><br>${formatMoney(nearest.value)}<br>${labels[index] ?? index} d`;
+                tooltip.style.left = `${nearest.point.x}px`;
+                tooltip.style.top = `${nearest.point.y}px`;
+                tooltip.style.opacity = "1";
+            };
+
+            resizeCanvas(canvas, context);
+            drawSeries();
+            canvas.addEventListener("mousemove", showTooltip);
+            canvas.addEventListener("mouseleave", () => {
+                tooltip.style.opacity = "0";
+                drawSeries();
+            });
+            window.addEventListener("resize", () => {
+                resizeCanvas(canvas, context);
+                drawSeries();
+            });
+        };
+
+        drawChart({
+            canvasId: "portfolio-chart",
+            tooltipId: "portfolio-chart-tooltip",
+            yLabel: "{% t "value" %}",
+            series: [{
+                label: "{% t "portfolio" %}",
+                values: payload.average_path || [],
+                color: palette[0],
+                width: 4,
+            }],
+        });
+
+        drawChart({
+            canvasId: "positions-chart",
+            tooltipId: "positions-chart-tooltip",
+            yLabel: "{% t "position_value" %}",
+            series: (payload.position_paths || []).map((item, index) => ({
+                label: item.ticker,
+                values: item.values || [],
+                color: palette[(index + 1) % palette.length],
+                width: 3,
+            })),
+        });
+    })();
+</script>
+{% endif %}
+
+<script>
+    (() => {
+        document.querySelectorAll(".scenario-form input[data-slider-min]").forEach((numberInput) => {
+            const slider = document.createElement("input");
+            slider.type = "range";
+            slider.min = numberInput.dataset.sliderMin;
+            slider.max = numberInput.dataset.sliderMax;
+            slider.step = numberInput.dataset.sliderStep;
+            slider.value = numberInput.value || slider.min;
+            slider.setAttribute("aria-hidden", "true");
+            numberInput.parentElement.insertBefore(slider, numberInput);
+
+            slider.addEventListener("input", () => {
+                numberInput.value = slider.value;
+            });
+            numberInput.addEventListener("input", () => {
+                slider.value = numberInput.value;
+            });
+        });
+    })();
+</script>
 {% endblock %}

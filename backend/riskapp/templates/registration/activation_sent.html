@@ -1,0 +1,30 @@
+{% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
+
+{% block title %}{% t "activation_sent_title" %} | {% t "site_name" %}{% endblock %}
+
+{% block content %}
+<section class="auth-panel">
+    <div class="section-kicker">{% t "activation_sent_kicker" %}</div>
+    <h1>{% t "activation_sent_heading" %}</h1>
+    <p class="muted">
+        {% if email %}
+            {% t "activation_sent_subtitle_with_email" email=email %}
+        {% else %}
+            {% t "activation_sent_subtitle" %}
+        {% endif %}
+    </p>
+    {% if activation_url %}
+        <div class="mini-card" style="margin-top: 20px;">
+            <div class="section-kicker">{% t "activation_link_preview" %}</div>
+            <p class="muted">{% t "activation_link_preview_hint" %}</p>
+            <p style="word-break: break-word; margin: 0;">
+                <a href="{{ activation_url }}">{{ activation_url }}</a>
+            </p>
+        </div>
+    {% endif %}
+    <div class="form-actions">
+        <a href="{% url 'login' %}" class="button button-primary">{% t "nav_sign_in" %}</a>
+    </div>
+</section>
+{% endblock %}

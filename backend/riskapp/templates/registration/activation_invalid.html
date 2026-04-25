@@ -1,0 +1,16 @@
+{% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
+
+{% block title %}{% t "activation_invalid_title" %} | {% t "site_name" %}{% endblock %}
+
+{% block content %}
+<section class="auth-panel">
+    <div class="section-kicker">{% t "activation_invalid_kicker" %}</div>
+    <h1>{% t "activation_invalid_heading" %}</h1>
+    <p class="muted">{% t "activation_invalid_subtitle" %}</p>
+    <div class="form-actions">
+        <a href="{% url 'riskapp:signup' %}" class="button button-primary">{% t "nav_sign_up" %}</a>
+        <a href="{% url 'login' %}" class="button button-secondary">{% t "nav_sign_in" %}</a>
+    </div>
+</section>
+{% endblock %}

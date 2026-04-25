@@ -5,31 +5,54 @@
 
 {% block content %}
 <section class="hero">
-    <div class="section-kicker">{% t "dashboard_kicker" %}</div>
-    <h1>{% t "dashboard_heading" %}</h1>
-    <p class="muted">{% t "dashboard_subtitle" %}</p>
+    <div class="hero-meta">
+        <div class="hero-content">
+            <div class="section-kicker">{% t "dashboard_kicker" %}</div>
+            <h1>{% t "dashboard_heading" %}</h1>
+            <p class="muted">{% t "dashboard_subtitle" %}</p>
+            <div class="hero-links">
+                <a class="button button-primary" href="{% url 'riskapp:portfolio_create' %}">{% t "create_portfolio" %}</a>
+                <a class="button button-secondary" href="{% url 'riskapp:scenarios' %}">{% t "nav_scenarios" %}</a>
+            </div>
+        </div>
+        <div class="hero-spotlight">
+            <span class="pill">{% t "current_value" %}</span>
+            <div class="eyebrow-value">{{ total_current_value|floatformat:2 }}</div>
+            <div class="metric-note">{% t "results" %}: {{ results_count }}</div>
+        </div>
+    </div>
 </section>
 
 <section class="grid">
     <article class="card span-3">
         <div class="section-kicker">{% t "portfolios" %}</div>
         <div class="metric">{{ portfolios_count }}</div>
+        <div class="metric-note">{% t "latest_portfolios" %}</div>
     </article>
     <article class="card span-3">
         <div class="section-kicker">{% t "scenarios" %}</div>
         <div class="metric">{{ scenarios_count }}</div>
+        <div class="metric-note">{% t "scenario_list_kicker" %}</div>
     </article>
     <article class="card span-3">
         <div class="section-kicker">{% t "results" %}</div>
         <div class="metric">{{ results_count }}</div>
+        <div class="metric-note">{% t "result_kicker" %}</div>
     </article>
     <article class="card span-3">
         <div class="section-kicker">{% t "current_value" %}</div>
         <div class="metric">{{ total_current_value|floatformat:2 }}</div>
+        <div class="metric-note">{% t "dashboard_kicker" %}</div>
     </article>
 
     <article class="card span-6">
-        <h2>{% t "latest_portfolios" %}</h2>
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% t "portfolios" %}</div>
+                <h2>{% t "latest_portfolios" %}</h2>
+            </div>
+            <a class="button button-ghost" href="{% url 'riskapp:portfolios' %}">{% t "nav_portfolios" %}</a>
+        </div>
         {% if latest_portfolios %}
             <div class="table-wrap">
                 <table>
@@ -59,7 +82,13 @@
     </article>
 
     <article class="card span-6">
-        <h2>{% t "latest_results" %}</h2>
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% t "results" %}</div>
+                <h2>{% t "latest_results" %}</h2>
+            </div>
+            <a class="button button-ghost" href="{% url 'riskapp:scenarios' %}">{% t "nav_scenarios" %}</a>
+        </div>
         {% if latest_results %}
             <div class="table-wrap">
                 <table>

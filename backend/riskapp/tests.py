@@ -1,7 +1,12 @@
 from decimal import Decimal
 
+from django.core import mail
 from django.contrib.auth.models import User
+from django.contrib.auth.tokens import default_token_generator
 from django.test import TestCase
+from django.urls import reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 
 from riskapp.models import Instrument, Portfolio, PortfolioPosition, RiskMetric, Scenario, SimulationResult
 from riskapp.services.simulation import run_scenario_simulation
@@ -294,3 +299,109 @@ class RiskAppWebUiTests(TestCase):
         response = self.client.get("/admin/")
 
         self.assertNotEqual(response.status_code, 200)
+
+    def test_admin_site_uses_custom_title(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get("/admin/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Страница админа Market Risk")
+
+    def test_signup_creates_inactive_user_and_sends_activation_email(self):
+        response = self.client.post(
+            reverse("riskapp:signup"),
+            {
+                "username": "newuser",
+                "first_name": "New",
+                "last_name": "User",
+                "email": "newuser@example.com",
+                "password1": "StrongPass123!",
+                "password2": "StrongPass123!",
+            },
+        )
+
+        created_user = User.objects.get(username="newuser")
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(created_user.is_active)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("activate", mail.outbox[0].body)
+
+    def test_signup_shows_russian_password_mismatch_message(self):
+        response = self.client.post(
+            reverse("riskapp:signup"),
+            {
+                "username": "newuser",
+                "first_name": "New",
+                "last_name": "User",
+                "email": "newuser@example.com",
+                "password1": "StrongPass123!",
+                "password2": "DifferentPass123!",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Пароли не совпадают.")
+
+    def test_activation_link_activates_user(self):
+        user = User.objects.create_user(
+            username="pending",
+            email="pending@example.com",
+            password="StrongPass123!",
+            is_active=False,
+        )
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+
+        response = self.client.get(reverse("riskapp:activate_account", args=[uid, token]))
+
+        user.refresh_from_db()
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(user.is_active)
+
+    def test_user_can_open_profile_page(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("riskapp:profile"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.user.username)
+
+    def test_user_can_update_profile(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("riskapp:profile"),
+            {
+                "first_name": "Web",
+                "last_name": "User",
+                "email": "webuser@example.com",
+            },
+        )
+
+        self.user.refresh_from_db()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.user.first_name, "Web")
+        self.assertEqual(self.user.last_name, "User")
+        self.assertEqual(self.user.email, "webuser@example.com")
+
+    def test_authenticated_user_can_open_password_change_page(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("account_password_change"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Обновление пароля")
+
+    def test_password_reset_sends_email(self):
+        self.user.email = "webuser@example.com"
+        self.user.save(update_fields=["email"])
+
+        response = self.client.post(
+            reverse("account_password_reset"),
+            {"email": "webuser@example.com"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("/accounts/reset/", mail.outbox[0].body)

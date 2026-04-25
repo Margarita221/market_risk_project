@@ -5,9 +5,18 @@
 
 {% block content %}
 <section class="hero">
-    <div class="section-kicker">{% t "scenario_list_kicker" %}</div>
-    <h1>{% t "scenario_list_title" %}</h1>
-    <p class="muted">{% t "scenario_list_subtitle" %}</p>
+    <div class="hero-meta">
+        <div class="hero-content">
+            <div class="section-kicker">{% t "scenario_list_kicker" %}</div>
+            <h1>{% t "scenario_list_title" %}</h1>
+            <p class="muted">{% t "scenario_list_subtitle" %}</p>
+        </div>
+        <div class="hero-spotlight">
+            <span class="pill">{% t "scenarios" %}</span>
+            <div class="eyebrow-value">{{ scenarios|length }}</div>
+            <div class="metric-note">{% t "results" %} / {% t "iterations" %}</div>
+        </div>
+    </div>
 </section>
 
 <section class="card">

@@ -1,14 +1,89 @@
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.views import (
+    LoginView,
+    PasswordChangeDoneView,
+    PasswordChangeView,
+    PasswordResetCompleteView,
+    PasswordResetConfirmView,
+    PasswordResetDoneView,
+    PasswordResetView,
+)
+from django.core.mail import send_mail
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum
 from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.urls import reverse, reverse_lazy
 
-from riskapp.forms import PortfolioForm, PortfolioPositionForm, PortfolioPositionQuantityForm, ScenarioForm
+from riskapp.forms import (
+    LocalizedAuthenticationForm,
+    LocalizedPasswordChangeForm,
+    LocalizedPasswordResetForm,
+    LocalizedSetPasswordForm,
+    PortfolioForm,
+    PortfolioPositionForm,
+    PortfolioPositionQuantityForm,
+    ProfileForm,
+    ScenarioForm,
+    SignUpForm,
+)
 from riskapp.i18n import get_request_language, normalize_language, translate
 from riskapp.models import Portfolio, PortfolioPosition, Scenario, SimulationResult
 from riskapp.services.simulation import run_scenario_simulation
+
+User = get_user_model()
+
+
+class LanguageAwareFormMixin:
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["language"] = get_request_language(self.request)
+        return kwargs
+
+
+class LocalizedLoginView(LoginView):
+    authentication_form = LocalizedAuthenticationForm
+    template_name = "registration/login.html"
+
+
+class LocalizedPasswordChangeView(LanguageAwareFormMixin, PasswordChangeView):
+    form_class = LocalizedPasswordChangeForm
+    template_name = "riskapp/auth/password_change_form.html"
+    success_url = reverse_lazy("account_password_change_done")
+
+
+class LocalizedPasswordChangeDoneView(PasswordChangeDoneView):
+    template_name = "riskapp/auth/password_change_done.html"
+
+
+class LocalizedPasswordResetView(LanguageAwareFormMixin, PasswordResetView):
+    form_class = LocalizedPasswordResetForm
+    template_name = "riskapp/auth/password_reset_form.html"
+    email_template_name = "riskapp/auth/password_reset_email.html"
+    subject_template_name = "riskapp/auth/password_reset_subject.txt"
+    success_url = reverse_lazy("account_password_reset_done")
+
+    def form_valid(self, form):
+        self.extra_email_context = {"ui_language": get_request_language(self.request)}
+        return super().form_valid(form)
+
+
+class LocalizedPasswordResetDoneView(PasswordResetDoneView):
+    template_name = "riskapp/auth/password_reset_done.html"
+
+
+class LocalizedPasswordResetConfirmView(LanguageAwareFormMixin, PasswordResetConfirmView):
+    form_class = LocalizedSetPasswordForm
+    template_name = "riskapp/auth/password_reset_confirm.html"
+    success_url = reverse_lazy("account_password_reset_complete")
+
+
+class LocalizedPasswordResetCompleteView(PasswordResetCompleteView):
+    template_name = "riskapp/auth/password_reset_complete.html"
 
 
 def user_scope(user, queryset, owner_lookup="user"):
@@ -24,6 +99,106 @@ def switch_language(request, language):
 
     request.session["ui_language"] = normalized_language
     return redirect(request.META.get("HTTP_REFERER") or reverse("riskapp:dashboard"))
+
+
+def send_activation_email(request, user):
+    language = get_request_language(request)
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    activation_url = request.build_absolute_uri(
+        reverse("riskapp:activate_account", args=[uid, token])
+    )
+    request.session["last_activation_url"] = activation_url
+    subject = translate("activation_email_subject", language)
+    message = translate(
+        "activation_email_body",
+        language,
+        first_name=user.first_name or user.username,
+        activation_url=activation_url,
+    )
+    send_mail(subject, message, None, [user.email], fail_silently=False)
+
+
+def signup(request):
+    if request.user.is_authenticated:
+        return redirect("riskapp:dashboard")
+
+    language = get_request_language(request)
+    form = SignUpForm(request.POST or None, language=language)
+
+    if request.method == "POST" and form.is_valid():
+        user = form.save(commit=False)
+        user.email = form.cleaned_data["email"]
+        user.is_active = False
+        user.save()
+        send_activation_email(request, user)
+        messages.success(
+            request,
+            translate("signup_success", language, email=user.email),
+        )
+        return redirect(f"{reverse('riskapp:activation_sent')}?email={user.email}")
+
+    return render(request, "registration/signup.html", {"form": form})
+
+
+def activation_sent(request):
+    return render(
+        request,
+        "registration/activation_sent.html",
+        {
+            "email": request.GET.get("email", ""),
+            "activation_url": request.session.get("last_activation_url", ""),
+        },
+    )
+
+
+def activate_account(request, uidb64, token):
+    language = get_request_language(request)
+
+    try:
+        user_id = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=user_id)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        user = None
+
+    if user is None or not default_token_generator.check_token(user, token):
+        return render(request, "registration/activation_invalid.html", status=400)
+
+    if not user.is_active:
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+
+    messages.success(
+        request,
+        translate("activation_success", language, username=user.username),
+    )
+    return redirect("login")
+
+
+@login_required
+def profile(request):
+    language = get_request_language(request)
+    form = ProfileForm(request.POST or None, instance=request.user, language=language)
+
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(
+            request,
+            translate("profile_updated", language),
+        )
+        return redirect("riskapp:profile")
+
+    context = {
+        "form": form,
+        "portfolios_count": user_scope(request.user, Portfolio.objects.all()).count(),
+        "scenarios_count": user_scope(request.user, Scenario.objects.all()).count(),
+        "results_count": user_scope(
+            request.user,
+            SimulationResult.objects.all(),
+            owner_lookup="scenario__user",
+        ).count(),
+    }
+    return render(request, "registration/profile.html", context)
 
 
 @login_required

@@ -5,21 +5,30 @@
 
 {% block content %}
 <section class="hero">
-    <div class="section-kicker">{% t "portfolio_detail_kicker" %}</div>
-    <h1>{{ portfolio.name }}</h1>
-    <p class="muted">
-        {% if portfolio.description %}
-            {{ portfolio.description }}
-        {% else %}
-            {% t "no_description" %}
-        {% endif %}
-    </p>
-    <div class="page-actions">
-        <a class="button button-secondary" href="{% url 'riskapp:portfolio_update' portfolio.id %}">{% t "edit_portfolio" %}</a>
-        <form method="post" action="{% url 'riskapp:portfolio_delete' portfolio.id %}" onsubmit="return confirm('{% t "confirm_delete_portfolio" %}');">
-            {% csrf_token %}
-            <button type="submit" class="button button-secondary">{% t "delete_portfolio" %}</button>
-        </form>
+    <div class="hero-meta">
+        <div class="hero-content">
+            <div class="section-kicker">{% t "portfolio_detail_kicker" %}</div>
+            <h1>{{ portfolio.name }}</h1>
+            <p class="muted">
+                {% if portfolio.description %}
+                    {{ portfolio.description }}
+                {% else %}
+                    {% t "no_description" %}
+                {% endif %}
+            </p>
+            <div class="page-actions">
+                <a class="button button-secondary" href="{% url 'riskapp:portfolio_update' portfolio.id %}">{% t "edit_portfolio" %}</a>
+                <form method="post" action="{% url 'riskapp:portfolio_delete' portfolio.id %}" onsubmit="return confirm('{% t "confirm_delete_portfolio" %}');">
+                    {% csrf_token %}
+                    <button type="submit" class="button button-ghost">{% t "delete_portfolio" %}</button>
+                </form>
+            </div>
+        </div>
+        <div class="hero-spotlight">
+            <span class="pill">{% t "current_value" %}</span>
+            <div class="eyebrow-value">{{ portfolio.current_value|floatformat:2 }}</div>
+            <div class="metric-note">{% t "updated" %}: {{ portfolio.updated_at|date:"Y-m-d H:i" }}</div>
+        </div>
     </div>
 </section>
 
@@ -38,7 +47,12 @@
     </article>
 
     <article class="card span-8">
-        <h2>{% t "positions" %}</h2>
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% t "positions" %}</div>
+                <h2>{% t "positions" %}</h2>
+            </div>
+        </div>
         {% if positions %}
             <div class="table-wrap">
                 <table>
@@ -84,7 +98,12 @@
     </article>
 
     <article class="card span-4">
-        <h2>{% t "add_position" %}</h2>
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% t "add_position" %}</div>
+                <h2>{% t "add_position" %}</h2>
+            </div>
+        </div>
         <p class="muted">{% t "add_position_subtitle" %}</p>
         <form method="post" action="{% url 'riskapp:portfolio_add_position' portfolio.id %}" class="form-card">
             {% csrf_token %}
@@ -105,7 +124,12 @@
     </article>
 
     <article class="card span-12">
-        <h2>{% t "scenario_builder" %}</h2>
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% t "scenario_builder" %}</div>
+                <h2>{% t "scenario_builder" %}</h2>
+            </div>
+        </div>
         <p class="muted">{% t "scenario_builder_subtitle" %}</p>
         <form method="post" action="{% url 'riskapp:portfolio_scenario_run' portfolio.id %}" class="form-card scenario-form">
             {% csrf_token %}
@@ -157,10 +181,16 @@
     </article>
 
     <article class="card span-12">
-        <h2>{% t "scenarios" %}</h2>
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% t "scenarios" %}</div>
+                <h2>{% t "scenarios" %}</h2>
+            </div>
+        </div>
         {% if scenarios %}
+            <div class="list-block">
             {% for scenario in scenarios %}
-                <div style="padding: 16px 0; border-bottom: 1px solid var(--line);">
+                <div class="list-item">
                     <h3>{{ scenario.name }}</h3>
                     <p class="muted">{% t "trend" %} {{ scenario.trend|floatformat:4 }}, {% t "volatility" %} {{ scenario.volatility|floatformat:4 }}</p>
                     <form method="post" action="{% url 'riskapp:run_scenario' scenario.id %}">
@@ -169,6 +199,7 @@
                     </form>
                 </div>
             {% endfor %}
+            </div>
         {% else %}
             <div class="empty">{% t "no_scenarios_for_portfolio" %}</div>
         {% endif %}

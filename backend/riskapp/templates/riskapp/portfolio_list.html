@@ -5,11 +5,20 @@
 
 {% block content %}
 <section class="hero">
-    <div class="section-kicker">{% t "portfolio_list_kicker" %}</div>
-    <h1>{% t "portfolio_list_title" %}</h1>
-    <p class="muted">{% t "portfolio_list_subtitle" %}</p>
-    <div class="page-actions">
-        <a class="button button-primary" href="{% url 'riskapp:portfolio_create' %}">{% t "create_portfolio" %}</a>
+    <div class="hero-meta">
+        <div class="hero-content">
+            <div class="section-kicker">{% t "portfolio_list_kicker" %}</div>
+            <h1>{% t "portfolio_list_title" %}</h1>
+            <p class="muted">{% t "portfolio_list_subtitle" %}</p>
+            <div class="page-actions">
+                <a class="button button-primary" href="{% url 'riskapp:portfolio_create' %}">{% t "create_portfolio" %}</a>
+            </div>
+        </div>
+        <div class="hero-spotlight">
+            <span class="pill">{% t "portfolios" %}</span>
+            <div class="eyebrow-value">{{ portfolios|length }}</div>
+            <div class="metric-note">{% t "positions" %} / {% t "current_value" %}</div>
+        </div>
     </div>
 </section>
 

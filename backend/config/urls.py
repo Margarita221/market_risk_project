@@ -16,9 +16,27 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from django.contrib.auth.views import LogoutView
+
+from riskapp.views import (
+    LocalizedLoginView,
+    LocalizedPasswordChangeDoneView,
+    LocalizedPasswordChangeView,
+    LocalizedPasswordResetCompleteView,
+    LocalizedPasswordResetConfirmView,
+    LocalizedPasswordResetDoneView,
+    LocalizedPasswordResetView,
+)
 
 urlpatterns = [
     path('', include('riskapp.urls')),
-    path('accounts/', include('django.contrib.auth.urls')),
+    path('accounts/login/', LocalizedLoginView.as_view(), name='login'),
+    path('accounts/logout/', LogoutView.as_view(), name='logout'),
+    path('accounts/password-change/', LocalizedPasswordChangeView.as_view(), name='account_password_change'),
+    path('accounts/password-change/done/', LocalizedPasswordChangeDoneView.as_view(), name='account_password_change_done'),
+    path('accounts/password-reset/', LocalizedPasswordResetView.as_view(), name='account_password_reset'),
+    path('accounts/password-reset/done/', LocalizedPasswordResetDoneView.as_view(), name='account_password_reset_done'),
+    path('accounts/reset/<uidb64>/<token>/', LocalizedPasswordResetConfirmView.as_view(), name='account_password_reset_confirm'),
+    path('accounts/reset/done/', LocalizedPasswordResetCompleteView.as_view(), name='account_password_reset_complete'),
     path('admin/', admin.site.urls),
 ]

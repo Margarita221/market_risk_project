@@ -1,0 +1,71 @@
+{% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
+
+{% block title %}{% t "profile_title" %} | {% t "site_name" %}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="hero-meta">
+        <div class="hero-content">
+            <div class="section-kicker">{% t "profile_kicker" %}</div>
+            <h1>{% t "profile_heading" %}</h1>
+            <p class="muted">{% t "profile_subtitle" %}</p>
+        </div>
+        <div class="hero-spotlight">
+            <span class="pill">{{ user.username }}</span>
+            <div class="eyebrow-value">{{ user.first_name|default:user.username }}</div>
+            <div class="metric-note">{{ user.email|default:"-" }}</div>
+        </div>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card span-4">
+        <div class="section-kicker">{% t "profile_overview" %}</div>
+        <h2>{{ user.username }}</h2>
+        <p class="muted">{{ user.email|default:"-" }}</p>
+        <div class="form-card">
+            <div>
+                <div class="hint">{% t "portfolios" %}</div>
+                <div class="metric">{{ portfolios_count }}</div>
+            </div>
+            <div>
+                <div class="hint">{% t "scenarios" %}</div>
+                <div class="metric">{{ scenarios_count }}</div>
+            </div>
+            <div>
+                <div class="hint">{% t "results" %}</div>
+                <div class="metric">{{ results_count }}</div>
+            </div>
+        </div>
+    </article>
+
+    <article class="card span-8">
+        <div class="section-kicker">{% t "edit_profile" %}</div>
+        <h2>{% t "profile_form_heading" %}</h2>
+        <form method="post" class="form-card">
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+            <label>
+                {% t "first_name" %}
+                {{ form.first_name }}
+                {{ form.first_name.errors }}
+            </label>
+            <label>
+                {% t "last_name" %}
+                {{ form.last_name }}
+                {{ form.last_name.errors }}
+            </label>
+            <label>
+                {% t "email" %}
+                {{ form.email }}
+                {{ form.email.errors }}
+            </label>
+            <div class="form-actions">
+                <button type="submit" class="button button-primary">{% t "save_profile" %}</button>
+                <a href="{% url 'account_password_change' %}" class="button button-secondary">{% t "change_password" %}</a>
+            </div>
+        </form>
+    </article>
+</section>
+{% endblock %}

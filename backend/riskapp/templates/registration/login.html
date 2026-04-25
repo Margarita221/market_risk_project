@@ -8,6 +8,16 @@
     <div class="section-kicker">{% t "login_kicker" %}</div>
     <h1>{% t "login_heading" %}</h1>
     <p class="muted">{% t "login_subtitle" %}</p>
+    <div class="mini-grid" style="margin-top: 20px; margin-bottom: 10px;">
+        <div class="mini-card">
+            <span class="section-kicker">{% t "portfolios" %}</span>
+            <strong>{% t "nav_portfolios" %}</strong>
+        </div>
+        <div class="mini-card">
+            <span class="section-kicker">{% t "results" %}</span>
+            <strong>{% t "nav_scenarios" %}</strong>
+        </div>
+    </div>
 
     {% if form.errors %}
         <div class="message message-error">{% t "login_error" %}</div>
@@ -25,5 +35,14 @@
         </label>
         <button type="submit" class="button button-primary">{% t "nav_sign_in" %}</button>
     </form>
+
+    <div class="form-actions">
+        <a href="{% url 'account_password_reset' %}" class="button button-secondary">{% t "forgot_password" %}</a>
+    </div>
+
+    <div class="form-actions">
+        <span class="hint">{% t "signup_prompt" %}</span>
+        <a href="{% url 'riskapp:signup' %}" class="button button-secondary">{% t "nav_sign_up" %}</a>
+    </div>
 </section>
 {% endblock %}

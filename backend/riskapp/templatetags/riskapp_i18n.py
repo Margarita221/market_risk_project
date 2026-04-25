@@ -7,5 +7,5 @@ register = template.Library()
 
 
 @register.simple_tag(takes_context=True)
-def t(context, key):
-    return translate(key, context.get("ui_language", "ru"))
+def t(context, key, **kwargs):
+    return translate(key, context.get("ui_language", "ru"), **kwargs)

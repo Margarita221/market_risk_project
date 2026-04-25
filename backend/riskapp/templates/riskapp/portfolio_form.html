@@ -5,9 +5,17 @@
 
 {% block content %}
 <section class="hero">
-    <div class="section-kicker">{% t "create_portfolio_kicker" %}</div>
-    <h1>{% if mode == "edit" %}{% t "edit_portfolio" %}{% else %}{% t "create_portfolio" %}{% endif %}</h1>
-    <p class="muted">{% t "create_portfolio_subtitle" %}</p>
+    <div class="hero-meta">
+        <div class="hero-content">
+            <div class="section-kicker">{% t "create_portfolio_kicker" %}</div>
+            <h1>{% if mode == "edit" %}{% t "edit_portfolio" %}{% else %}{% t "create_portfolio" %}{% endif %}</h1>
+            <p class="muted">{% t "create_portfolio_subtitle" %}</p>
+        </div>
+        <div class="hero-spotlight">
+            <span class="pill">{% if mode == "edit" %}{% t "edit_portfolio" %}{% else %}{% t "create_portfolio" %}{% endif %}</span>
+            <div class="metric-note">{% t "portfolio_list_kicker" %}</div>
+        </div>
+    </div>
 </section>
 
 <section class="card">

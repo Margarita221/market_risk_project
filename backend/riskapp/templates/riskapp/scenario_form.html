@@ -1,0 +1,102 @@
+{% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
+
+{% block title %}{% if mode == "edit" %}{% t "edit_scenario" %}{% else %}{% t "create_scenario" %}{% endif %} | {% t "site_name" %}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="hero-meta">
+        <div class="hero-content">
+            <div class="section-kicker">{% t "scenario_builder" %}</div>
+            <h1>{% if mode == "edit" %}{% t "edit_scenario" %}{% else %}{% t "create_scenario" %}{% endif %}</h1>
+            <p class="muted">{% t "scenario_form_subtitle" %}</p>
+        </div>
+        <div class="hero-spotlight">
+            <span class="pill">{% t "scenarios" %}</span>
+            <div class="metric-note">{% t "scenario_settings_subtitle" %}</div>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <form method="post" class="form-card scenario-form">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div class="scenario-controls">
+            <label class="wide">
+                {% t "portfolio" %}
+                {{ form.portfolio }}
+                {{ form.portfolio.errors }}
+            </label>
+            <label>
+                {% t "name" %}
+                {{ form.name }}
+                {{ form.name.errors }}
+            </label>
+            <label>
+                {% t "description" %}
+                {{ form.description }}
+                {{ form.description.errors }}
+            </label>
+            <label>
+                {% t "trend" %}
+                <span class="range-control">{{ form.trend }}</span>
+                {{ form.trend.errors }}
+            </label>
+            <label>
+                {% t "volatility" %}
+                <span class="range-control">{{ form.volatility }}</span>
+                {{ form.volatility.errors }}
+            </label>
+            <label>
+                {% t "noise_level" %}
+                <span class="range-control">{{ form.noise_level }}</span>
+                {{ form.noise_level.errors }}
+            </label>
+            <label>
+                {% t "horizon" %}
+                <span class="range-control">{{ form.time_horizon }}</span>
+                {{ form.time_horizon.errors }}
+            </label>
+            <label>
+                {% t "time_step" %}
+                <span class="range-control">{{ form.time_step }}</span>
+                {{ form.time_step.errors }}
+            </label>
+            <label>
+                {% t "iterations" %}
+                <span class="range-control">{{ form.iterations_count }}</span>
+                {{ form.iterations_count.errors }}
+            </label>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="button button-primary">
+                {% if mode == "edit" %}{% t "update_scenario" %}{% else %}{% t "save_scenario" %}{% endif %}
+            </button>
+            <a class="button button-secondary" href="{% url 'riskapp:scenarios' %}">{% t "cancel" %}</a>
+        </div>
+    </form>
+</section>
+
+<script>
+    (() => {
+        document.querySelectorAll(".scenario-form input[data-slider-min]").forEach((numberInput) => {
+            const slider = document.createElement("input");
+            slider.type = "range";
+            slider.min = numberInput.dataset.sliderMin;
+            slider.max = numberInput.dataset.sliderMax;
+            slider.step = numberInput.dataset.sliderStep;
+            slider.value = numberInput.value || slider.min;
+            slider.setAttribute("aria-hidden", "true");
+            numberInput.parentElement.insertBefore(slider, numberInput);
+
+            slider.addEventListener("input", () => {
+                numberInput.value = slider.value;
+            });
+            numberInput.addEventListener("input", () => {
+                slider.value = numberInput.value;
+            });
+        });
+    })();
+</script>
+{% endblock %}

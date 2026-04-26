@@ -34,16 +34,16 @@
 
 <section class="grid">
     <article class="card span-4">
-        <div class="section-kicker">{% t "initial_value" %}</div>
-        <div class="metric">{{ portfolio.initial_value|floatformat:2 }}</div>
-    </article>
-    <article class="card span-4">
         <div class="section-kicker">{% t "current_value" %}</div>
         <div class="metric">{{ portfolio.current_value|floatformat:2 }}</div>
     </article>
     <article class="card span-4">
         <div class="section-kicker">{% t "updated" %}</div>
         <div class="metric" style="font-size: 1.75rem;">{{ portfolio.updated_at|date:"Y-m-d H:i" }}</div>
+    </article>
+    <article class="card span-4">
+        <div class="section-kicker">{% t "positions" %}</div>
+        <div class="metric">{{ positions|length }}</div>
     </article>
 
     <article class="card span-8">

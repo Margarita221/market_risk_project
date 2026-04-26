@@ -679,6 +679,7 @@
                     <a href="{% url 'riskapp:dashboard' %}">{% t "nav_dashboard" %}</a>
                     <a href="{% url 'riskapp:portfolios' %}">{% t "nav_portfolios" %}</a>
                     <a href="{% url 'riskapp:scenarios' %}">{% t "nav_scenarios" %}</a>
+                    <a href="{% url 'riskapp:results' %}">{% t "nav_results" %}</a>
                     <a href="{% url 'riskapp:profile' %}">{% t "nav_profile" %}</a>
                     {% if user.is_staff or user.is_superuser %}
                         <a href="{% url 'admin:index' %}">{% t "nav_admin" %}</a>

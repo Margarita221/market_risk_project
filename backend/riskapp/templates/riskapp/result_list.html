@@ -1,0 +1,75 @@
+{% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
+
+{% block title %}{% t "result_list_title" %} | {% t "site_name" %}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="hero-meta">
+        <div class="hero-content">
+            <div class="section-kicker">{% t "result_list_kicker" %}</div>
+            <h1>{% t "result_list_title" %}</h1>
+            <p class="muted">{% t "result_list_subtitle" %}</p>
+        </div>
+        <div class="hero-spotlight">
+            <span class="pill">{% t "results" %}</span>
+            <div class="eyebrow-value">{{ results|length }}</div>
+            <div class="metric-note">{% t "portfolio" %} / {% t "scenario" %}</div>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <form method="get" class="form-card">
+        <label>
+            {% t "filter_by_portfolio" %}
+            <select name="portfolio">
+                <option value="">{% t "all_portfolios" %}</option>
+                {% for portfolio in portfolios %}
+                    <option value="{{ portfolio.id }}"{% if selected_portfolio == portfolio.id|stringformat:"s" %} selected{% endif %}>
+                        {{ portfolio.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="form-actions">
+            <button type="submit" class="button button-primary">{% t "show_results" %}</button>
+        </div>
+    </form>
+</section>
+
+<section class="card">
+    {% if results %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>{% t "scenario" %}</th>
+                        <th>{% t "portfolio" %}</th>
+                        <th>{% t "expected_return" %}</th>
+                        <th>{% t "volatility" %}</th>
+                        <th>{% t "final_value" %}</th>
+                        <th>{% t "max_drawdown" %}</th>
+                        <th>{% t "opened" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for result in results %}
+                        <tr>
+                            <td><a href="{% url 'riskapp:result_detail' result.id %}">{{ result.scenario.name }}</a></td>
+                            <td><a href="{% url 'riskapp:portfolio_detail' result.scenario.portfolio_id %}">{{ result.scenario.portfolio.name }}</a></td>
+                            <td>{{ result.expected_return|floatformat:4 }}</td>
+                            <td>{{ result.portfolio_volatility|floatformat:4 }}</td>
+                            <td>{{ result.final_value|floatformat:2 }}</td>
+                            <td>{{ result.max_drawdown|floatformat:4 }}</td>
+                            <td>{{ result.execution_time|date:"Y-m-d H:i" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty">{% t "no_results_for_filter" %}</div>
+    {% endif %}
+</section>
+{% endblock %}

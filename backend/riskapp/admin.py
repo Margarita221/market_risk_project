@@ -6,8 +6,8 @@ from django.db.models import Count
 from .models import Instrument, Portfolio, PortfolioPosition, RiskMetric, Scenario, SimulationResult
 
 
-admin.site.site_header = "Страница админа Market Risk"
-admin.site.site_title = "Страница админа"
+admin.site.site_header = "Страница администратора Market Risk"
+admin.site.site_title = "Страница администратора"
 admin.site.index_title = "Управление пользователями, портфелями, сценариями и рыночными данными"
 
 

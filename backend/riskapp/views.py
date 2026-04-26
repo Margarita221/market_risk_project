@@ -28,6 +28,7 @@ from riskapp.forms import (
     PortfolioPositionForm,
     PortfolioPositionQuantityForm,
     ProfileForm,
+    ScenarioManagementForm,
     ScenarioForm,
     SignUpForm,
 )
@@ -422,6 +423,108 @@ def scenario_list(request):
         .order_by("-created_at")
     )
     return render(request, "riskapp/scenario_list.html", {"scenarios": scenarios})
+
+
+@login_required
+def result_list(request):
+    portfolios = user_scope(request.user, Portfolio.objects.all()).order_by("name")
+    results = user_scope(
+        request.user,
+        SimulationResult.objects.select_related("scenario", "scenario__portfolio"),
+        owner_lookup="scenario__user",
+    )
+
+    selected_portfolio = request.GET.get("portfolio", "").strip()
+    if selected_portfolio:
+        results = results.filter(scenario__portfolio_id=selected_portfolio)
+
+    context = {
+        "results": results.order_by("-execution_time"),
+        "portfolios": portfolios,
+        "selected_portfolio": selected_portfolio,
+    }
+    return render(request, "riskapp/result_list.html", context)
+
+
+@login_required
+def scenario_create(request):
+    portfolios = user_scope(request.user, Portfolio.objects.all())
+    form = ScenarioManagementForm(
+        request.POST or None,
+        portfolios_queryset=portfolios,
+        initial={
+            "trend": "0.050",
+            "volatility": "0.150",
+            "noise_level": "0.020",
+            "time_horizon": 365,
+            "time_step": 1,
+            "iterations_count": 500,
+        },
+    )
+
+    if request.method == "POST" and form.is_valid():
+        scenario = form.save(commit=False)
+        scenario.user = scenario.portfolio.user
+        scenario.save()
+        messages.success(
+            request,
+            translate("scenario_created", get_request_language(request), name=scenario.name),
+        )
+        return redirect("riskapp:scenarios")
+
+    return render(request, "riskapp/scenario_form.html", {
+        "form": form,
+        "mode": "create",
+    })
+
+
+@login_required
+def scenario_update(request, scenario_id):
+    scenario = get_object_or_404(
+        user_scope(request.user, Scenario.objects.select_related("portfolio")),
+        id=scenario_id,
+    )
+    portfolios = user_scope(request.user, Portfolio.objects.all())
+    form = ScenarioManagementForm(
+        request.POST or None,
+        instance=scenario,
+        portfolios_queryset=portfolios,
+    )
+
+    if request.method == "POST" and form.is_valid():
+        scenario = form.save(commit=False)
+        scenario.user = scenario.portfolio.user
+        scenario.save()
+        messages.success(
+            request,
+            translate("scenario_updated", get_request_language(request), name=scenario.name),
+        )
+        return redirect("riskapp:scenarios")
+
+    return render(request, "riskapp/scenario_form.html", {
+        "form": form,
+        "scenario": scenario,
+        "mode": "edit",
+    })
+
+
+@login_required
+def scenario_delete(request, scenario_id):
+    scenario = get_object_or_404(
+        user_scope(request.user, Scenario.objects.select_related("portfolio")),
+        id=scenario_id,
+    )
+
+    if request.method != "POST":
+        return redirect("riskapp:scenarios")
+
+    scenario_name = scenario.name
+    scenario.delete()
+    messages.success(
+        request,
+        translate("scenario_deleted", get_request_language(request), name=scenario_name),
+    )
+    return redirect("riskapp:scenarios")
 
 
 @login_required

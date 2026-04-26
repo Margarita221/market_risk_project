@@ -30,6 +30,10 @@ urlpatterns = [
         name="portfolio_position_delete",
     ),
     path("scenarios/", views.scenario_list, name="scenarios"),
+    path("scenarios/create/", views.scenario_create, name="scenario_create"),
+    path("scenarios/<int:scenario_id>/edit/", views.scenario_update, name="scenario_update"),
+    path("scenarios/<int:scenario_id>/delete/", views.scenario_delete, name="scenario_delete"),
     path("scenarios/<int:scenario_id>/run/", views.run_scenario, name="run_scenario"),
+    path("results/", views.result_list, name="results"),
     path("results/<int:result_id>/", views.result_detail, name="result_detail"),
 ]

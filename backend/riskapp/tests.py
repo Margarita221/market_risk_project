@@ -185,6 +185,60 @@ class RiskAppWebUiTests(TestCase):
         self.assertEqual(scenario.portfolio, self.portfolio)
         self.assertEqual(SimulationResult.objects.filter(scenario=scenario).count(), 1)
 
+    def test_user_can_create_scenario_from_scenarios_page(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("riskapp:scenario_create"),
+            {
+                "portfolio": self.portfolio.id,
+                "name": "Scenario from form",
+                "description": "Created from dedicated scenario form",
+                "trend": "0.025",
+                "volatility": "0.090",
+                "noise_level": "0.012",
+                "time_horizon": "45",
+                "time_step": "1",
+                "iterations_count": "80",
+            },
+        )
+
+        scenario = Scenario.objects.get(name="Scenario from form")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(scenario.user, self.user)
+        self.assertEqual(scenario.portfolio, self.portfolio)
+
+    def test_user_can_update_own_scenario(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("riskapp:scenario_update", args=[self.scenario.id]),
+            {
+                "portfolio": self.portfolio.id,
+                "name": "Updated scenario",
+                "description": "Updated scenario description",
+                "trend": "0.055",
+                "volatility": "0.110",
+                "noise_level": "0.008",
+                "time_horizon": "75",
+                "time_step": "1",
+                "iterations_count": "120",
+            },
+        )
+
+        self.scenario.refresh_from_db()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.scenario.name, "Updated scenario")
+        self.assertEqual(self.scenario.time_horizon, 75)
+
+    def test_user_can_delete_own_scenario(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("riskapp:scenario_delete", args=[self.scenario.id]))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Scenario.objects.filter(id=self.scenario.id).exists())
+
     def test_user_can_create_portfolio_from_web(self):
         self.client.force_login(self.user)
 
@@ -278,6 +332,20 @@ class RiskAppWebUiTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_regular_user_cannot_edit_other_user_scenario(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("riskapp:scenario_update", args=[self.other_scenario.id]))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_regular_user_cannot_delete_other_user_scenario(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("riskapp:scenario_delete", args=[self.other_scenario.id]))
+
+        self.assertEqual(response.status_code, 404)
+
     def test_admin_can_open_other_user_portfolio(self):
         self.client.force_login(self.admin_user)
 
@@ -306,7 +374,7 @@ class RiskAppWebUiTests(TestCase):
         response = self.client.get("/admin/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Страница админа Market Risk")
+        self.assertContains(response, "Страница администратора Market Risk")
 
     def test_signup_creates_inactive_user_and_sends_activation_email(self):
         response = self.client.post(
@@ -405,3 +473,22 @@ class RiskAppWebUiTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("/accounts/reset/", mail.outbox[0].body)
+
+    def test_user_can_open_results_page(self):
+        self.client.force_login(self.user)
+        result = run_scenario_simulation(self.scenario.id, seed=42).result
+
+        response = self.client.get(reverse("riskapp:results"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.scenario.name)
+        self.assertContains(response, reverse("riskapp:result_detail", args=[result.id]))
+
+    def test_results_page_can_filter_by_portfolio(self):
+        self.client.force_login(self.user)
+        run_scenario_simulation(self.scenario.id, seed=42)
+
+        response = self.client.get(reverse("riskapp:results"), {"portfolio": self.portfolio.id})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.portfolio.name)

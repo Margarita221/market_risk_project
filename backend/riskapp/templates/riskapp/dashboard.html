@@ -59,7 +59,6 @@
                     <thead>
                         <tr>
                             <th>{% t "name" %}</th>
-                            <th>{% t "initial" %}</th>
                             <th>{% t "current" %}</th>
                             <th>{% t "updated" %}</th>
                         </tr>
@@ -68,7 +67,6 @@
                         {% for portfolio in latest_portfolios %}
                             <tr>
                                 <td><a href="{% url 'riskapp:portfolio_detail' portfolio.id %}">{{ portfolio.name }}</a></td>
-                                <td>{{ portfolio.initial_value|floatformat:2 }}</td>
                                 <td>{{ portfolio.current_value|floatformat:2 }}</td>
                                 <td>{{ portfolio.updated_at|date:"Y-m-d H:i" }}</td>
                             </tr>

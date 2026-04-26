@@ -10,6 +10,9 @@
             <div class="section-kicker">{% t "scenario_list_kicker" %}</div>
             <h1>{% t "scenario_list_title" %}</h1>
             <p class="muted">{% t "scenario_list_subtitle" %}</p>
+            <div class="page-actions">
+                <a class="button button-primary" href="{% url 'riskapp:scenario_create' %}">{% t "create_scenario" %}</a>
+            </div>
         </div>
         <div class="hero-spotlight">
             <span class="pill">{% t "scenarios" %}</span>
@@ -46,10 +49,17 @@
                             <td>{{ scenario.iterations_count }}</td>
                             <td><span class="pill">{{ scenario.results_count }}</span></td>
                             <td>
-                                <form method="post" action="{% url 'riskapp:run_scenario' scenario.id %}">
-                                    {% csrf_token %}
-                                    <button type="submit" class="button button-primary">{% t "run" %}</button>
-                                </form>
+                                <div class="page-actions" style="margin-top: 0;">
+                                    <form method="post" action="{% url 'riskapp:run_scenario' scenario.id %}">
+                                        {% csrf_token %}
+                                        <button type="submit" class="button button-primary">{% t "run" %}</button>
+                                    </form>
+                                    <a href="{% url 'riskapp:scenario_update' scenario.id %}" class="button button-secondary">{% t "edit" %}</a>
+                                    <form method="post" action="{% url 'riskapp:scenario_delete' scenario.id %}" onsubmit="return confirm('{% t "confirm_delete_scenario" %}');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="button button-ghost">{% t "delete" %}</button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                     {% endfor %}

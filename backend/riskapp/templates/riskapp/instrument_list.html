@@ -1,0 +1,128 @@
+{% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
+
+{% block title %}{% t "instrument_search_title" %} | {% t "site_name" %}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="hero-meta">
+        <div class="hero-content">
+            <div class="section-kicker">{% t "instrument_search_kicker" %}</div>
+            <h1>{% t "instrument_search_title" %}</h1>
+            <p class="muted">{% t "instrument_search_subtitle" %}</p>
+            {% if portfolio %}
+                <div class="hero-links">
+                    <span class="pill">{{ portfolio.name }}</span>
+                    <a class="button button-secondary" href="{% url 'riskapp:portfolio_detail' portfolio.id %}">{% t "back_to_portfolio" %}</a>
+                </div>
+            {% endif %}
+        </div>
+        <div class="hero-spotlight">
+            <span class="pill">{% t "nav_instruments" %}</span>
+            <div class="eyebrow-value">{{ page_obj.paginator.count }}</div>
+            <div class="metric-note">{% t "instrument_search_short" %}</div>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <form method="get" class="form-card">
+        {% if portfolio %}
+            <input type="hidden" name="portfolio" value="{{ portfolio.id }}">
+        {% endif %}
+        <div class="scenario-controls">
+            <label class="wide">
+                {% t "search_query" %}
+                <input type="text" name="query" value="{{ query }}" placeholder="{% t "search_query_placeholder" %}">
+            </label>
+            <label>
+                {% t "type" %}
+                <select name="instrument_type">
+                    <option value="">{% t "all_types" %}</option>
+                    {% for value in instrument_types %}
+                        <option value="{{ value }}"{% if instrument_type == value %} selected{% endif %}>{{ value }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                {% t "currency" %}
+                <select name="currency">
+                    <option value="">{% t "all_currencies" %}</option>
+                    {% for value in currencies %}
+                        <option value="{{ value }}"{% if currency == value %} selected{% endif %}>{{ value }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                {% t "price_from" %}
+                <input type="number" name="price_min" step="0.01" min="0" value="{{ price_min|default_if_none:'' }}">
+            </label>
+            <label>
+                {% t "price_to" %}
+                <input type="number" name="price_max" step="0.01" min="0" value="{{ price_max|default_if_none:'' }}">
+            </label>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="button button-primary">{% t "show_instruments" %}</button>
+            <a href="{% url 'riskapp:instruments' %}{% if portfolio %}?portfolio={{ portfolio.id }}{% endif %}" class="button button-ghost">{% t "reset_filters" %}</a>
+        </div>
+    </form>
+</section>
+
+<section class="card">
+    {% if page_obj.object_list %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>{% t "ticker" %}</th>
+                        <th>{% t "name" %}</th>
+                        <th>{% t "type" %}</th>
+                        <th>{% t "currency" %}</th>
+                        <th>{% t "market_price" %}</th>
+                        <th>{% t "updated" %}</th>
+                        {% if portfolio %}
+                            <th>{% t "action" %}</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for instrument in page_obj.object_list %}
+                        <tr>
+                            <td>{{ instrument.ticker }}</td>
+                            <td>{{ instrument.name }}</td>
+                            <td>{{ instrument.instrument_type }}</td>
+                            <td>{{ instrument.currency }}</td>
+                            <td>{{ instrument.current_price|floatformat:4 }}</td>
+                            <td>{{ instrument.last_price_updated_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                            {% if portfolio %}
+                                <td>
+                                    <form method="post" action="{% url 'riskapp:portfolio_add_position' portfolio.id %}" class="page-actions" style="margin-top: 0;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="instrument" value="{{ instrument.id }}">
+                                        <input type="number" name="quantity" min="1" value="1" style="max-width: 100px;">
+                                        <button type="submit" class="button button-primary">{% t "add_to_portfolio" %}</button>
+                                    </form>
+                                </td>
+                            {% endif %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if page_obj.paginator.num_pages > 1 %}
+            <div class="page-actions">
+                {% if page_obj.has_previous %}
+                    <a class="button button-ghost" href="?page={{ page_obj.previous_page_number }}{% if query %}&query={{ query }}{% endif %}{% if instrument_type %}&instrument_type={{ instrument_type }}{% endif %}{% if currency %}&currency={{ currency }}{% endif %}{% if price_min %}&price_min={{ price_min }}{% endif %}{% if price_max %}&price_max={{ price_max }}{% endif %}{% if portfolio %}&portfolio={{ portfolio.id }}{% endif %}">{% t "previous_page" %}</a>
+                {% endif %}
+                <span class="pill">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}
+                    <a class="button button-ghost" href="?page={{ page_obj.next_page_number }}{% if query %}&query={{ query }}{% endif %}{% if instrument_type %}&instrument_type={{ instrument_type }}{% endif %}{% if currency %}&currency={{ currency }}{% endif %}{% if price_min %}&price_min={{ price_min }}{% endif %}{% if price_max %}&price_max={{ price_max }}{% endif %}{% if portfolio %}&portfolio={{ portfolio.id }}{% endif %}">{% t "next_page" %}</a>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="empty">{% t "no_instruments_found" %}</div>
+    {% endif %}
+</section>
+{% endblock %}

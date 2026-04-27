@@ -12,7 +12,8 @@ from django.contrib.auth.views import (
     PasswordResetView,
 )
 from django.core.mail import send_mail
-from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum
+from django.core.paginator import Paginator
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, Q, Sum
 from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.encoding import force_bytes, force_str
@@ -24,19 +25,33 @@ from riskapp.forms import (
     LocalizedPasswordChangeForm,
     LocalizedPasswordResetForm,
     LocalizedSetPasswordForm,
+    InstrumentSearchForm,
     PortfolioForm,
     PortfolioPositionForm,
     PortfolioPositionQuantityForm,
     ProfileForm,
+    SCENARIO_PRESETS,
     ScenarioManagementForm,
     ScenarioForm,
     SignUpForm,
 )
 from riskapp.i18n import get_request_language, normalize_language, translate
-from riskapp.models import Portfolio, PortfolioPosition, Scenario, SimulationResult
+from riskapp.models import Instrument, Portfolio, PortfolioPosition, Scenario, SimulationResult
 from riskapp.services.simulation import run_scenario_simulation
 
 User = get_user_model()
+METRIC_TRANSLATION_KEYS = {
+    "VaR 95%": "metric_var_95",
+    "CVaR 95%": "metric_cvar_95",
+    "Sharpe Ratio": "metric_sharpe_ratio",
+    "Probability of Loss": "metric_probability_of_loss",
+    "Probability of Drawdown > 10%": "metric_probability_of_drawdown",
+    "Median Final Value": "metric_median_final_value",
+    "Final Value P5": "metric_final_value_p5",
+    "Final Value P95": "metric_final_value_p95",
+    "Iterations": "metric_iterations",
+    "Steps": "metric_steps",
+}
 
 
 class LanguageAwareFormMixin:
@@ -91,6 +106,42 @@ def user_scope(user, queryset, owner_lookup="user"):
     if user.is_staff or user.is_superuser:
         return queryset
     return queryset.filter(**{owner_lookup: user})
+
+
+def localize_metric(metric, language):
+    return {
+        "name": translate(METRIC_TRANSLATION_KEYS.get(metric.metric_name, ""), language)
+        if METRIC_TRANSLATION_KEYS.get(metric.metric_name)
+        else metric.metric_name,
+        "value": metric.metric_value,
+        "confidence_level": metric.confidence_level,
+        "calculated_at": metric.calculated_at,
+    }
+
+
+def build_result_notes(result, language):
+    chart_data = result.chart_data or {}
+    scenario = result.scenario
+    return [
+        translate(
+            "run_note_iterations_steps",
+            language,
+            iterations=chart_data.get("iterations", scenario.iterations_count),
+            steps=chart_data.get("steps", "-"),
+        ),
+        translate(
+            "run_note_market_structure",
+            language,
+            preset=scenario.get_preset_display(),
+            systematic_risk=chart_data.get("systematic_risk_percent", 0),
+            market_shock=chart_data.get("market_shock_percent", 0),
+            currency_shock=chart_data.get("currency_shock_percent", 0),
+        ),
+        translate(
+            "run_note_chart_consistency",
+            language,
+        ),
+    ]
 
 
 def switch_language(request, language):
@@ -243,13 +294,9 @@ def get_portfolio_detail_context(portfolio, scenario_form=None, position_form=No
         "scenarios": scenarios,
         "position_form": position_form or PortfolioPositionForm(),
         "scenario_form": scenario_form or ScenarioForm(initial={
+            "preset": Scenario.PRESET_BASE,
             "name": "Base scenario",
-            "trend": "0.050",
-            "volatility": "0.150",
-            "noise_level": "0.020",
-            "time_horizon": 365,
-            "time_step": 1,
-            "iterations_count": 500,
+            **SCENARIO_PRESETS[Scenario.PRESET_BASE],
         }),
     }
 
@@ -325,6 +372,58 @@ def portfolio_delete(request, portfolio_id):
 def portfolio_detail(request, portfolio_id):
     portfolio = get_object_or_404(user_scope(request.user, Portfolio.objects.all()), id=portfolio_id)
     return render(request, "riskapp/portfolio_detail.html", get_portfolio_detail_context(portfolio))
+
+
+@login_required
+def instrument_list(request):
+    form = InstrumentSearchForm(request.GET or None)
+    instruments = Instrument.objects.all().order_by("ticker")
+
+    query = ""
+    instrument_type = ""
+    currency = ""
+    price_min = None
+    price_max = None
+    portfolio = None
+    if form.is_valid():
+        query = form.cleaned_data.get("query") or ""
+        instrument_type = form.cleaned_data.get("instrument_type") or ""
+        currency = form.cleaned_data.get("currency") or ""
+        price_min = form.cleaned_data.get("price_min")
+        price_max = form.cleaned_data.get("price_max")
+        portfolio_id = form.cleaned_data.get("portfolio")
+        if portfolio_id:
+            portfolio = get_object_or_404(user_scope(request.user, Portfolio.objects.all()), id=portfolio_id)
+
+    if query:
+        instruments = instruments.filter(Q(ticker__icontains=query) | Q(name__icontains=query))
+    if instrument_type:
+        instruments = instruments.filter(instrument_type=instrument_type)
+    if currency:
+        instruments = instruments.filter(currency__iexact=currency)
+    if price_min is not None:
+        instruments = instruments.filter(current_price__gte=price_min)
+    if price_max is not None:
+        instruments = instruments.filter(current_price__lte=price_max)
+
+    paginator = Paginator(instruments, 25)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    currencies = Instrument.objects.order_by("currency").values_list("currency", flat=True).distinct()
+    instrument_types = Instrument.objects.order_by("instrument_type").values_list("instrument_type", flat=True).distinct()
+
+    context = {
+        "form": form,
+        "page_obj": page_obj,
+        "portfolio": portfolio,
+        "currencies": currencies,
+        "instrument_types": instrument_types,
+        "query": query,
+        "instrument_type": instrument_type,
+        "currency": currency,
+        "price_min": price_min,
+        "price_max": price_max,
+    }
+    return render(request, "riskapp/instrument_list.html", context)
 
 
 @login_required
@@ -453,12 +552,8 @@ def scenario_create(request):
         request.POST or None,
         portfolios_queryset=portfolios,
         initial={
-            "trend": "0.050",
-            "volatility": "0.150",
-            "noise_level": "0.020",
-            "time_horizon": 365,
-            "time_step": 1,
-            "iterations_count": 500,
+            "preset": Scenario.PRESET_BASE,
+            **SCENARIO_PRESETS[Scenario.PRESET_BASE],
         },
     )
 
@@ -574,10 +669,13 @@ def run_scenario(request, scenario_id):
     if "name" in request.POST:
         form = ScenarioForm(request.POST, instance=scenario)
         if not form.is_valid():
+            language = get_request_language(request)
             metrics = scenario.results.first().risk_metrics.order_by("metric_name") if scenario.results.exists() else []
             return render(request, "riskapp/result_detail.html", {
                 "result": scenario.results.first(),
-                "metrics": metrics,
+                "metrics": [localize_metric(metric, language) for metric in metrics],
+                "run_notes": build_result_notes(scenario.results.first(), language) if scenario.results.exists() else [],
+                "status_label": translate("status_completed", language),
                 "scenario_form": form,
             })
         form.save()
@@ -598,6 +696,7 @@ def run_scenario(request, scenario_id):
 
 @login_required
 def result_detail(request, result_id):
+    language = get_request_language(request)
     result = get_object_or_404(
         user_scope(
             request.user,
@@ -606,9 +705,11 @@ def result_detail(request, result_id):
         ),
         id=result_id,
     )
-    metrics = result.risk_metrics.order_by("metric_name")
+    metrics = [localize_metric(metric, language) for metric in result.risk_metrics.order_by("metric_name")]
     return render(request, "riskapp/result_detail.html", {
         "result": result,
         "metrics": metrics,
+        "run_notes": build_result_notes(result, language),
+        "status_label": translate("status_completed", language),
         "scenario_form": ScenarioForm(instance=result.scenario),
     })

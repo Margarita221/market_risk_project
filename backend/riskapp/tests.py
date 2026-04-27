@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core import mail
 from django.contrib.auth.models import User
@@ -9,6 +10,7 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
 from riskapp.models import Instrument, Portfolio, PortfolioPosition, RiskMetric, Scenario, SimulationResult
+from riskapp.services.moex import fetch_market_snapshot, sync_moex_instruments
 from riskapp.services.simulation import run_scenario_simulation
 
 
@@ -22,6 +24,13 @@ class ScenarioSimulationServiceTests(TestCase):
             currency="USD",
             current_price=Decimal("100.0000"),
         )
+        self.bond = Instrument.objects.create(
+            ticker="BOND",
+            name="Test bond",
+            instrument_type="bond",
+            currency="RUB",
+            current_price=Decimal("1000.0000"),
+        )
         self.portfolio = Portfolio.objects.create(
             user=self.user,
             name="Test portfolio",
@@ -33,13 +42,23 @@ class ScenarioSimulationServiceTests(TestCase):
             quantity=10,
             average_purchase_price=Decimal("90.0000"),
         )
+        PortfolioPosition.objects.create(
+            portfolio=self.portfolio,
+            instrument=self.bond,
+            quantity=2,
+            average_purchase_price=Decimal("980.0000"),
+        )
         self.scenario = Scenario.objects.create(
             user=self.user,
             portfolio=self.portfolio,
             name="Base scenario",
+            preset=Scenario.PRESET_BASE,
             trend=Decimal("0.001000"),
             volatility=Decimal("0.010000"),
             noise_level=Decimal("0.001000"),
+            market_shock=Decimal("0.000000"),
+            currency_shock=Decimal("0.000000"),
+            systematic_risk=Decimal("0.6500"),
             time_horizon=10,
             time_step=Decimal("1.0000"),
             iterations_count=20,
@@ -50,12 +69,20 @@ class ScenarioSimulationServiceTests(TestCase):
 
         self.assertEqual(SimulationResult.objects.count(), 1)
         self.assertEqual(summary.result.status, "completed")
-        self.assertEqual(RiskMetric.objects.filter(simulation_result=summary.result).count(), 5)
+        self.assertEqual(RiskMetric.objects.filter(simulation_result=summary.result).count(), 10)
         self.assertIn("average_path", summary.result.chart_data)
         self.assertIn("sample_paths", summary.result.chart_data)
         self.assertIn("position_paths", summary.result.chart_data)
+        self.assertIn("median_final_value", summary.result.chart_data)
+        self.assertIn("probability_of_loss_percent", summary.result.chart_data)
         self.assertGreater(len(summary.result.chart_data["average_path"]), 1)
-        self.assertEqual(len(summary.result.chart_data["position_paths"]), 1)
+        self.assertEqual(len(summary.result.chart_data["position_paths"]), 2)
+        self.assertTrue(
+            RiskMetric.objects.filter(
+                simulation_result=summary.result,
+                metric_name="Probability of Loss",
+            ).exists()
+        )
 
     def test_run_scenario_simulation_rejects_empty_portfolio(self):
         empty_portfolio = Portfolio.objects.create(
@@ -67,9 +94,13 @@ class ScenarioSimulationServiceTests(TestCase):
             user=self.user,
             portfolio=empty_portfolio,
             name="Empty scenario",
+            preset=Scenario.PRESET_BASE,
             trend=Decimal("0.001000"),
             volatility=Decimal("0.010000"),
             noise_level=Decimal("0.001000"),
+            market_shock=Decimal("0.000000"),
+            currency_shock=Decimal("0.000000"),
+            systematic_risk=Decimal("0.6500"),
             time_horizon=10,
             time_step=Decimal("1.0000"),
             iterations_count=20,
@@ -77,6 +108,46 @@ class ScenarioSimulationServiceTests(TestCase):
 
         with self.assertRaises(ValueError):
             run_scenario_simulation(scenario.id, seed=42)
+
+
+class MoexImportServiceTests(TestCase):
+    @patch("riskapp.services.moex._fetch_json")
+    def test_fetch_market_snapshot_maps_security_rows(self, mocked_fetch):
+        mocked_fetch.return_value = {
+            "securities": {
+                "columns": ["SECID", "SHORTNAME", "FACEUNIT"],
+                "data": [["SBER", "Sberbank", "SUR"]],
+            },
+            "marketdata": {
+                "columns": ["SECID", "LAST", "MARKETPRICE"],
+                "data": [["SBER", 312.45, None]],
+            },
+        }
+
+        rows = fetch_market_snapshot("shares")
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["ticker"], "SBER")
+        self.assertEqual(rows[0]["name"], "Sberbank")
+        self.assertEqual(rows[0]["currency"], "RUB")
+        self.assertEqual(rows[0]["current_price"], Decimal("312.45"))
+
+    @patch("riskapp.services.moex.iter_market_snapshots")
+    def test_sync_moex_instruments_creates_and_updates_instruments(self, mocked_iter):
+        mocked_iter.return_value = iter([
+            ("shares", {"ticker": "SBER", "name": "Sberbank", "currency": "RUB", "current_price": Decimal("300.10")}),
+            ("bonds", {"ticker": "OFZ26238", "name": "OFZ 26238", "currency": "RUB", "current_price": Decimal("102.55")}),
+        ])
+
+        stats = sync_moex_instruments(markets=["shares", "bonds"])
+
+        self.assertEqual(stats.created, 2)
+        self.assertEqual(stats.updated, 0)
+        self.assertEqual(stats.skipped, 0)
+        self.assertEqual(Instrument.objects.count(), 2)
+        self.assertEqual(Instrument.objects.get(ticker="SBER").instrument_type, "stock")
+        self.assertEqual(Instrument.objects.get(ticker="OFZ26238").instrument_type, "bond")
+        self.assertIsNotNone(Instrument.objects.get(ticker="SBER").last_price_updated_at)
 
 
 class RiskAppWebUiTests(TestCase):
@@ -191,12 +262,16 @@ class RiskAppWebUiTests(TestCase):
         response = self.client.post(
             reverse("riskapp:scenario_create"),
             {
+                "preset": Scenario.PRESET_STRESS,
                 "portfolio": self.portfolio.id,
                 "name": "Scenario from form",
                 "description": "Created from dedicated scenario form",
                 "trend": "0.025",
                 "volatility": "0.090",
                 "noise_level": "0.012",
+                "market_shock": "-0.010",
+                "currency_shock": "-0.020",
+                "systematic_risk": "0.3000",
                 "time_horizon": "45",
                 "time_step": "1",
                 "iterations_count": "80",
@@ -207,6 +282,10 @@ class RiskAppWebUiTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(scenario.user, self.user)
         self.assertEqual(scenario.portfolio, self.portfolio)
+        self.assertEqual(scenario.preset, Scenario.PRESET_STRESS)
+        self.assertEqual(scenario.market_shock, Decimal("-0.120000"))
+        self.assertEqual(scenario.currency_shock, Decimal("-0.100000"))
+        self.assertEqual(scenario.systematic_risk, Decimal("0.8500"))
 
     def test_user_can_update_own_scenario(self):
         self.client.force_login(self.user)
@@ -214,12 +293,16 @@ class RiskAppWebUiTests(TestCase):
         response = self.client.post(
             reverse("riskapp:scenario_update", args=[self.scenario.id]),
             {
+                "preset": Scenario.PRESET_CUSTOM,
                 "portfolio": self.portfolio.id,
                 "name": "Updated scenario",
                 "description": "Updated scenario description",
                 "trend": "0.055",
                 "volatility": "0.110",
                 "noise_level": "0.008",
+                "market_shock": "-0.020",
+                "currency_shock": "-0.030",
+                "systematic_risk": "0.4000",
                 "time_horizon": "75",
                 "time_step": "1",
                 "iterations_count": "120",
@@ -230,6 +313,9 @@ class RiskAppWebUiTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.scenario.name, "Updated scenario")
         self.assertEqual(self.scenario.time_horizon, 75)
+        self.assertEqual(self.scenario.market_shock, Decimal("-0.020000"))
+        self.assertEqual(self.scenario.currency_shock, Decimal("-0.030000"))
+        self.assertEqual(self.scenario.systematic_risk, Decimal("0.4000"))
 
     def test_user_can_delete_own_scenario(self):
         self.client.force_login(self.user)
@@ -483,6 +569,15 @@ class RiskAppWebUiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.scenario.name)
         self.assertContains(response, reverse("riskapp:result_detail", args=[result.id]))
+
+    def test_user_can_open_instrument_catalog_for_portfolio(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("riskapp:instruments"), {"portfolio": self.portfolio.id, "query": "WEB"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Web instrument")
+        self.assertContains(response, self.portfolio.name)
 
     def test_results_page_can_filter_by_portfolio(self):
         self.client.force_login(self.user)

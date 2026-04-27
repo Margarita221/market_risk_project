@@ -12,6 +12,7 @@ urlpatterns = [
     path("accounts/profile/", views.profile, name="profile"),
     path("accounts/activation-sent/", views.activation_sent, name="activation_sent"),
     path("accounts/activate/<uidb64>/<token>/", views.activate_account, name="activate_account"),
+    path("instruments/", views.instrument_list, name="instruments"),
     path("portfolios/", views.portfolio_list, name="portfolios"),
     path("portfolios/create/", views.portfolio_create, name="portfolio_create"),
     path("portfolios/<int:portfolio_id>/", views.portfolio_detail, name="portfolio_detail"),

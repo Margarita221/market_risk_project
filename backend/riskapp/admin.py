@@ -71,7 +71,7 @@ class RiskMetricAdmin(admin.ModelAdmin):
 
 @admin.register(Instrument)
 class InstrumentAdmin(admin.ModelAdmin):
-    list_display = ("ticker", "name", "instrument_type", "currency", "current_price", "created_at")
+    list_display = ("ticker", "name", "instrument_type", "currency", "current_price", "last_price_updated_at", "created_at")
     search_fields = ("ticker", "name")
     list_filter = ("instrument_type", "currency")
     ordering = ("ticker",)
@@ -95,7 +95,19 @@ class PortfolioPositionAdmin(admin.ModelAdmin):
 
 @admin.register(Scenario)
 class ScenarioAdmin(admin.ModelAdmin):
-    list_display = ("name", "user", "portfolio", "trend", "volatility", "iterations_count", "created_at")
+    list_display = (
+        "name",
+        "user",
+        "portfolio",
+        "preset",
+        "trend",
+        "volatility",
+        "market_shock",
+        "currency_shock",
+        "systematic_risk",
+        "iterations_count",
+        "created_at",
+    )
     search_fields = ("name", "user__username", "portfolio__name")
     list_filter = ("created_at", "updated_at")
 

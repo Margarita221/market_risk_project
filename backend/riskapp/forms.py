@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django import forms
 from django.contrib.auth.forms import (
     AuthenticationForm,
@@ -15,6 +17,7 @@ from riskapp.models import Instrument, Portfolio, PortfolioPosition, Scenario
 
 SCENARIO_FIELD_WIDGETS = {
     "description": forms.Textarea(attrs={"rows": 3}),
+    "preset": forms.Select(),
     "trend": forms.NumberInput(attrs={
         "step": "0.001",
         "min": "-0.5",
@@ -38,6 +41,30 @@ SCENARIO_FIELD_WIDGETS = {
         "data-slider-min": "0",
         "data-slider-max": "0.5",
         "data-slider-step": "0.001",
+    }),
+    "market_shock": forms.NumberInput(attrs={
+        "step": "0.001",
+        "min": "-0.8",
+        "max": "0.8",
+        "data-slider-min": "-0.8",
+        "data-slider-max": "0.8",
+        "data-slider-step": "0.001",
+    }),
+    "currency_shock": forms.NumberInput(attrs={
+        "step": "0.001",
+        "min": "-0.8",
+        "max": "0.8",
+        "data-slider-min": "-0.8",
+        "data-slider-max": "0.8",
+        "data-slider-step": "0.001",
+    }),
+    "systematic_risk": forms.NumberInput(attrs={
+        "step": "0.01",
+        "min": "0",
+        "max": "1",
+        "data-slider-min": "0",
+        "data-slider-max": "1",
+        "data-slider-step": "0.01",
     }),
     "time_horizon": forms.NumberInput(attrs={
         "step": "1",
@@ -63,6 +90,64 @@ SCENARIO_FIELD_WIDGETS = {
         "data-slider-max": "5000",
         "data-slider-step": "10",
     }),
+}
+
+SCENARIO_PRESETS = {
+    Scenario.PRESET_BASE: {
+        "trend": "0.050000",
+        "volatility": "0.150000",
+        "noise_level": "0.020000",
+        "market_shock": "0.000000",
+        "currency_shock": "0.000000",
+        "systematic_risk": "0.6500",
+        "time_horizon": 365,
+        "time_step": "1.0000",
+        "iterations_count": 500,
+    },
+    Scenario.PRESET_OPTIMISTIC: {
+        "trend": "0.120000",
+        "volatility": "0.140000",
+        "noise_level": "0.018000",
+        "market_shock": "0.040000",
+        "currency_shock": "0.030000",
+        "systematic_risk": "0.6000",
+        "time_horizon": 365,
+        "time_step": "1.0000",
+        "iterations_count": 700,
+    },
+    Scenario.PRESET_PESSIMISTIC: {
+        "trend": "-0.040000",
+        "volatility": "0.220000",
+        "noise_level": "0.030000",
+        "market_shock": "-0.050000",
+        "currency_shock": "-0.040000",
+        "systematic_risk": "0.7000",
+        "time_horizon": 365,
+        "time_step": "1.0000",
+        "iterations_count": 700,
+    },
+    Scenario.PRESET_STRESS: {
+        "trend": "-0.080000",
+        "volatility": "0.350000",
+        "noise_level": "0.050000",
+        "market_shock": "-0.120000",
+        "currency_shock": "-0.100000",
+        "systematic_risk": "0.8500",
+        "time_horizon": 240,
+        "time_step": "1.0000",
+        "iterations_count": 1000,
+    },
+    Scenario.PRESET_CRISIS: {
+        "trend": "-0.180000",
+        "volatility": "0.500000",
+        "noise_level": "0.080000",
+        "market_shock": "-0.200000",
+        "currency_shock": "-0.180000",
+        "systematic_risk": "0.9500",
+        "time_horizon": 180,
+        "time_step": "1.0000",
+        "iterations_count": 1200,
+    },
 }
 
 
@@ -265,39 +350,97 @@ class PortfolioPositionQuantityForm(forms.ModelForm):
         self.fields["quantity"].min_value = 1
 
 
+class InstrumentSearchForm(forms.Form):
+    query = forms.CharField(required=False)
+    instrument_type = forms.CharField(required=False)
+    currency = forms.CharField(required=False)
+    price_min = forms.DecimalField(required=False, min_value=0, decimal_places=2, max_digits=15)
+    price_max = forms.DecimalField(required=False, min_value=0, decimal_places=2, max_digits=15)
+    portfolio = forms.IntegerField(required=False, min_value=1)
+
+
 class ScenarioForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name in ("preset", "market_shock", "currency_shock", "systematic_risk"):
+            self.fields[field_name].required = False
+        self.fields["preset"].initial = self.initial.get("preset", Scenario.PRESET_BASE)
+
     class Meta:
         model = Scenario
         fields = [
+            "preset",
             "name",
             "description",
             "trend",
             "volatility",
             "noise_level",
+            "market_shock",
+            "currency_shock",
+            "systematic_risk",
             "time_horizon",
             "time_step",
             "iterations_count",
         ]
         widgets = SCENARIO_FIELD_WIDGETS
+
+    def clean(self):
+        cleaned_data = super().clean()
+        preset = cleaned_data.get("preset") or Scenario.PRESET_BASE
+        cleaned_data["preset"] = preset
+        self.cleaned_data["preset"] = preset
+        if preset and preset != Scenario.PRESET_CUSTOM:
+            preset_values = SCENARIO_PRESETS.get(preset, {})
+            for field_name, value in preset_values.items():
+                cleaned_data[field_name] = value
+                self.cleaned_data[field_name] = value
+        else:
+            cleaned_data["market_shock"] = cleaned_data.get("market_shock") or Decimal("0")
+            cleaned_data["currency_shock"] = cleaned_data.get("currency_shock") or Decimal("0")
+            cleaned_data["systematic_risk"] = cleaned_data.get("systematic_risk") or Decimal("0.6500")
+        return cleaned_data
 
 
 class ScenarioManagementForm(forms.ModelForm):
-    class Meta:
-        model = Scenario
-        fields = [
-            "portfolio",
-            "name",
-            "description",
-            "trend",
-            "volatility",
-            "noise_level",
-            "time_horizon",
-            "time_step",
-            "iterations_count",
-        ]
-        widgets = SCENARIO_FIELD_WIDGETS
-
     def __init__(self, *args, portfolios_queryset=None, **kwargs):
         super().__init__(*args, **kwargs)
         if portfolios_queryset is not None:
             self.fields["portfolio"].queryset = portfolios_queryset.order_by("name")
+        for field_name in ("preset", "market_shock", "currency_shock", "systematic_risk"):
+            self.fields[field_name].required = False
+        self.fields["preset"].initial = self.initial.get("preset", Scenario.PRESET_BASE)
+
+    class Meta:
+        model = Scenario
+        fields = [
+            "portfolio",
+            "preset",
+            "name",
+            "description",
+            "trend",
+            "volatility",
+            "noise_level",
+            "market_shock",
+            "currency_shock",
+            "systematic_risk",
+            "time_horizon",
+            "time_step",
+            "iterations_count",
+        ]
+        widgets = SCENARIO_FIELD_WIDGETS
+
+    def clean(self):
+        cleaned_data = super().clean()
+        preset = cleaned_data.get("preset") or Scenario.PRESET_BASE
+        cleaned_data["preset"] = preset
+        self.cleaned_data["preset"] = preset
+        if preset and preset != Scenario.PRESET_CUSTOM:
+            preset_values = SCENARIO_PRESETS.get(preset, {})
+            for field_name, value in preset_values.items():
+                cleaned_data[field_name] = value
+                self.cleaned_data[field_name] = value
+        else:
+            cleaned_data["market_shock"] = cleaned_data.get("market_shock") or Decimal("0")
+            cleaned_data["currency_shock"] = cleaned_data.get("currency_shock") or Decimal("0")
+            cleaned_data["systematic_risk"] = cleaned_data.get("systematic_risk") or Decimal("0.6500")
+        return cleaned_data

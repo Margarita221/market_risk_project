@@ -1,34 +1,37 @@
+from decimal import Decimal
+
+from django.contrib.auth.models import User
 from django.db import models
 from django.db.models import Q
-from django.contrib.auth.models import User
 
 
 class Instrument(models.Model):
-    ticker = models.CharField(max_length=20, unique=True, verbose_name='Тикер')
-    name = models.CharField(max_length=200, verbose_name='Наименование')
-    instrument_type = models.CharField(max_length=50, verbose_name='Тип инструмента')
-    currency = models.CharField(max_length=10, verbose_name='Валюта')
-    current_price = models.DecimalField(max_digits=15, decimal_places=4, verbose_name='Текущая цена')
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата создания')
+    ticker = models.CharField(max_length=20, unique=True, verbose_name="Ticker")
+    name = models.CharField(max_length=200, verbose_name="Name")
+    instrument_type = models.CharField(max_length=50, verbose_name="Instrument type")
+    currency = models.CharField(max_length=10, verbose_name="Currency")
+    current_price = models.DecimalField(max_digits=15, decimal_places=4, verbose_name="Current price")
+    last_price_updated_at = models.DateTimeField(null=True, blank=True, verbose_name="Price updated at")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Created at")
 
     class Meta:
-        db_table = 'instrument'
-        verbose_name = 'Финансовый инструмент'
-        verbose_name_plural = 'Финансовые инструменты'
-        ordering = ['ticker']
+        db_table = "instrument"
+        verbose_name = "Financial instrument"
+        verbose_name_plural = "Financial instruments"
+        ordering = ["ticker"]
         constraints = [
             models.CheckConstraint(
                 condition=Q(current_price__gte=0),
-                name='instrument_current_price_gte_0'
+                name="instrument_current_price_gte_0",
             )
         ]
 
     def __str__(self):
-        return f'{self.ticker} - {self.name}'
+        return f"{self.ticker} - {self.name}"
 
 
 class Portfolio(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='portfolios')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="portfolios")
     name = models.CharField(max_length=150)
     description = models.TextField(blank=True)
     initial_value = models.DecimalField(max_digits=15, decimal_places=2)
@@ -37,12 +40,12 @@ class Portfolio(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'portfolio'
-        ordering = ['created_at']
+        db_table = "portfolio"
+        ordering = ["created_at"]
         constraints = [
             models.CheckConstraint(
                 condition=Q(initial_value__gte=0),
-                name='portfolio_initial_value_gte_0'
+                name="portfolio_initial_value_gte_0",
             )
         ]
 
@@ -51,33 +54,26 @@ class Portfolio(models.Model):
 
 
 class PortfolioPosition(models.Model):
-    portfolio = models.ForeignKey(
-        Portfolio,
-        on_delete=models.CASCADE,
-        related_name='positions'
-    )
-    instrument = models.ForeignKey(
-        Instrument,
-        on_delete=models.CASCADE
-    )
+    portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE, related_name="positions")
+    instrument = models.ForeignKey(Instrument, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
     average_purchase_price = models.DecimalField(max_digits=15, decimal_places=4)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = 'portfolio_position'
+        db_table = "portfolio_position"
         constraints = [
             models.UniqueConstraint(
-                fields=['portfolio', 'instrument'],
-                name='unique_portfolio_instrument'
+                fields=["portfolio", "instrument"],
+                name="unique_portfolio_instrument",
             ),
             models.CheckConstraint(
                 condition=Q(quantity__gt=0),
-                name='portfolio_position_quantity_gt_0'
+                name="portfolio_position_quantity_gt_0",
             ),
             models.CheckConstraint(
                 condition=Q(average_purchase_price__gte=0),
-                name='portfolio_position_avg_price_gte_0'
+                name="portfolio_position_avg_price_gte_0",
             ),
         ]
 
@@ -86,21 +82,32 @@ class PortfolioPosition(models.Model):
 
 
 class Scenario(models.Model):
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='scenarios'
-    )
-    portfolio = models.ForeignKey(
-        Portfolio,
-        on_delete=models.CASCADE,
-        related_name='scenarios'
-    )
+    PRESET_CUSTOM = "custom"
+    PRESET_BASE = "base"
+    PRESET_OPTIMISTIC = "optimistic"
+    PRESET_PESSIMISTIC = "pessimistic"
+    PRESET_STRESS = "stress"
+    PRESET_CRISIS = "crisis"
+    PRESET_CHOICES = [
+        (PRESET_CUSTOM, "Custom"),
+        (PRESET_BASE, "Base"),
+        (PRESET_OPTIMISTIC, "Optimistic"),
+        (PRESET_PESSIMISTIC, "Pessimistic"),
+        (PRESET_STRESS, "Stress"),
+        (PRESET_CRISIS, "Crisis"),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="scenarios")
+    portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE, related_name="scenarios")
+    preset = models.CharField(max_length=20, choices=PRESET_CHOICES, default=PRESET_CUSTOM)
     name = models.CharField(max_length=150)
     description = models.TextField(blank=True)
     trend = models.DecimalField(max_digits=10, decimal_places=6)
     volatility = models.DecimalField(max_digits=10, decimal_places=6)
     noise_level = models.DecimalField(max_digits=10, decimal_places=6)
+    market_shock = models.DecimalField(max_digits=10, decimal_places=6, default=0)
+    currency_shock = models.DecimalField(max_digits=10, decimal_places=6, default=0)
+    systematic_risk = models.DecimalField(max_digits=5, decimal_places=4, default=Decimal("0.6500"))
     time_horizon = models.PositiveIntegerField()
     time_step = models.DecimalField(max_digits=10, decimal_places=4)
     iterations_count = models.PositiveIntegerField()
@@ -108,28 +115,36 @@ class Scenario(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'scenario'
-        ordering = ['-created_at']
+        db_table = "scenario"
+        ordering = ["-created_at"]
         constraints = [
             models.CheckConstraint(
                 condition=Q(volatility__gte=0),
-                name='scenario_volatility_gte_0'
+                name="scenario_volatility_gte_0",
             ),
             models.CheckConstraint(
                 condition=Q(noise_level__gte=0),
-                name='scenario_noise_level_gte_0'
+                name="scenario_noise_level_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=Q(systematic_risk__gte=0),
+                name="scenario_systematic_risk_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=Q(systematic_risk__lte=1),
+                name="scenario_systematic_risk_lte_1",
             ),
             models.CheckConstraint(
                 condition=Q(time_horizon__gt=0),
-                name='scenario_time_horizon_gt_0'
+                name="scenario_time_horizon_gt_0",
             ),
             models.CheckConstraint(
                 condition=Q(time_step__gt=0),
-                name='scenario_time_step_gt_0'
+                name="scenario_time_step_gt_0",
             ),
             models.CheckConstraint(
                 condition=Q(iterations_count__gt=0),
-                name='scenario_iterations_count_gt_0'
+                name="scenario_iterations_count_gt_0",
             ),
         ]
 
@@ -138,11 +153,7 @@ class Scenario(models.Model):
 
 
 class SimulationResult(models.Model):
-    scenario = models.ForeignKey(
-        Scenario,
-        on_delete=models.CASCADE,
-        related_name='results'
-    )
+    scenario = models.ForeignKey(Scenario, on_delete=models.CASCADE, related_name="results")
     execution_time = models.DateTimeField(auto_now_add=True)
     expected_return = models.DecimalField(max_digits=12, decimal_places=6)
     portfolio_volatility = models.DecimalField(max_digits=12, decimal_places=6)
@@ -153,16 +164,16 @@ class SimulationResult(models.Model):
     chart_data = models.JSONField(default=dict, blank=True)
 
     class Meta:
-        db_table = 'simulation_result'
-        ordering = ['-execution_time']
+        db_table = "simulation_result"
+        ordering = ["-execution_time"]
         constraints = [
             models.CheckConstraint(
                 condition=Q(final_value__gte=0),
-                name='simulation_result_final_value_gte_0'
+                name="simulation_result_final_value_gte_0",
             ),
             models.CheckConstraint(
                 condition=Q(max_drawdown__gte=0),
-                name='simulation_result_max_drawdown_gte_0'
+                name="simulation_result_max_drawdown_gte_0",
             ),
         ]
 
@@ -174,7 +185,7 @@ class RiskMetric(models.Model):
     simulation_result = models.ForeignKey(
         SimulationResult,
         on_delete=models.CASCADE,
-        related_name='risk_metrics'
+        related_name="risk_metrics",
     )
     metric_name = models.CharField(max_length=100)
     metric_value = models.DecimalField(max_digits=15, decimal_places=6)
@@ -182,16 +193,16 @@ class RiskMetric(models.Model):
     calculated_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = 'risk_metric'
-        ordering = ['metric_name']
+        db_table = "risk_metric"
+        ordering = ["metric_name"]
         constraints = [
             models.CheckConstraint(
                 condition=Q(confidence_level__gte=0) | Q(confidence_level__isnull=True),
-                name='risk_metric_confidence_level_gte_0_or_null'
+                name="risk_metric_confidence_level_gte_0_or_null",
             ),
             models.CheckConstraint(
                 condition=Q(confidence_level__lte=100) | Q(confidence_level__isnull=True),
-                name='risk_metric_confidence_level_lte_100_or_null'
+                name="risk_metric_confidence_level_lte_100_or_null",
             ),
         ]
 

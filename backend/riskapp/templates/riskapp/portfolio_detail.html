@@ -105,22 +105,23 @@
             </div>
         </div>
         <p class="muted">{% t "add_position_subtitle" %}</p>
-        <form method="post" action="{% url 'riskapp:portfolio_add_position' portfolio.id %}" class="form-card">
-            {% csrf_token %}
-            {{ position_form.non_field_errors }}
-            <label>
-                {% t "instrument" %}
-                {{ position_form.instrument }}
-                {{ position_form.instrument.errors }}
-            </label>
-            <label>
-                {% t "quantity" %}
-                {{ position_form.quantity }}
-                {{ position_form.quantity.errors }}
-            </label>
-            <span class="hint">{% t "market_price_hint" %}</span>
-            <button type="submit" class="button button-primary">{% t "add_to_portfolio" %}</button>
-        </form>
+        <div class="detail-list">
+            <div class="detail-row">
+                <span class="detail-label">{% t "instrument_search_title" %}</span>
+                <strong>{% t "instrument_search_short" %}</strong>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">{% t "currency" %}</span>
+                <strong>{% t "instrument_filter_currency_hint" %}</strong>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">{% t "price" %}</span>
+                <strong>{% t "instrument_filter_price_hint" %}</strong>
+            </div>
+        </div>
+        <div class="form-actions">
+            <a href="{% url 'riskapp:instruments' %}?portfolio={{ portfolio.id }}" class="button button-primary">{% t "browse_market_instruments" %}</a>
+        </div>
     </article>
 
     <article class="card span-12">
@@ -131,10 +132,24 @@
             </div>
         </div>
         <p class="muted">{% t "scenario_builder_subtitle" %}</p>
+        <div class="detail-list" style="margin-bottom: 18px;">
+            <div class="detail-row"><span class="detail-label">{% t "trend" %}</span><strong>{% t "trend_hint" %}</strong></div>
+            <div class="detail-row"><span class="detail-label">{% t "volatility" %}</span><strong>{% t "volatility_hint" %}</strong></div>
+            <div class="detail-row"><span class="detail-label">{% t "noise_level" %}</span><strong>{% t "noise_level_hint" %}</strong></div>
+            <div class="detail-row"><span class="detail-label">{% t "market_shock" %}</span><strong>{% t "market_shock_hint" %}</strong></div>
+            <div class="detail-row"><span class="detail-label">{% t "currency_shock" %}</span><strong>{% t "currency_shock_hint" %}</strong></div>
+            <div class="detail-row"><span class="detail-label">{% t "systematic_risk" %}</span><strong>{% t "systematic_risk_hint" %}</strong></div>
+        </div>
         <form method="post" action="{% url 'riskapp:portfolio_scenario_run' portfolio.id %}" class="form-card scenario-form">
             {% csrf_token %}
             {{ scenario_form.non_field_errors }}
             <div class="scenario-controls">
+                <label>
+                    {% t "scenario_preset" %}
+                    {{ scenario_form.preset }}
+                    <small class="muted">{% t "scenario_preset_hint" %}</small>
+                    {{ scenario_form.preset.errors }}
+                </label>
                 <label>
                     {% t "name" %}
                     {{ scenario_form.name }}
@@ -148,31 +163,55 @@
                 <label>
                     {% t "trend" %}
                     <span class="range-control">{{ scenario_form.trend }}</span>
+                    <small class="muted">{% t "trend_hint" %}</small>
                     {{ scenario_form.trend.errors }}
                 </label>
                 <label>
                     {% t "volatility" %}
                     <span class="range-control">{{ scenario_form.volatility }}</span>
+                    <small class="muted">{% t "volatility_hint" %}</small>
                     {{ scenario_form.volatility.errors }}
                 </label>
                 <label>
                     {% t "noise_level" %}
                     <span class="range-control">{{ scenario_form.noise_level }}</span>
+                    <small class="muted">{% t "noise_level_hint" %}</small>
                     {{ scenario_form.noise_level.errors }}
+                </label>
+                <label>
+                    {% t "market_shock" %}
+                    <span class="range-control">{{ scenario_form.market_shock }}</span>
+                    <small class="muted">{% t "market_shock_hint" %}</small>
+                    {{ scenario_form.market_shock.errors }}
+                </label>
+                <label>
+                    {% t "currency_shock" %}
+                    <span class="range-control">{{ scenario_form.currency_shock }}</span>
+                    <small class="muted">{% t "currency_shock_hint" %}</small>
+                    {{ scenario_form.currency_shock.errors }}
+                </label>
+                <label>
+                    {% t "systematic_risk" %}
+                    <span class="range-control">{{ scenario_form.systematic_risk }}</span>
+                    <small class="muted">{% t "systematic_risk_hint" %}</small>
+                    {{ scenario_form.systematic_risk.errors }}
                 </label>
                 <label>
                     {% t "horizon" %}
                     <span class="range-control">{{ scenario_form.time_horizon }}</span>
+                    <small class="muted">{% t "horizon_hint" %}</small>
                     {{ scenario_form.time_horizon.errors }}
                 </label>
                 <label>
                     {% t "time_step" %}
                     <span class="range-control">{{ scenario_form.time_step }}</span>
+                    <small class="muted">{% t "time_step_hint" %}</small>
                     {{ scenario_form.time_step.errors }}
                 </label>
                 <label>
                     {% t "iterations" %}
                     <span class="range-control">{{ scenario_form.iterations_count }}</span>
+                    <small class="muted">{% t "iterations_hint" %}</small>
                     {{ scenario_form.iterations_count.errors }}
                 </label>
             </div>
@@ -207,6 +246,14 @@
 </section>
 <script>
     (() => {
+        const presetValues = {
+            base: { trend: "0.050000", volatility: "0.150000", noise_level: "0.020000", market_shock: "0.000000", currency_shock: "0.000000", systematic_risk: "0.6500", time_horizon: "365", time_step: "1.0000", iterations_count: "500" },
+            optimistic: { trend: "0.120000", volatility: "0.140000", noise_level: "0.018000", market_shock: "0.040000", currency_shock: "0.030000", systematic_risk: "0.6000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
+            pessimistic: { trend: "-0.040000", volatility: "0.220000", noise_level: "0.030000", market_shock: "-0.050000", currency_shock: "-0.040000", systematic_risk: "0.7000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
+            stress: { trend: "-0.080000", volatility: "0.350000", noise_level: "0.050000", market_shock: "-0.120000", currency_shock: "-0.100000", systematic_risk: "0.8500", time_horizon: "240", time_step: "1.0000", iterations_count: "1000" },
+            crisis: { trend: "-0.180000", volatility: "0.500000", noise_level: "0.080000", market_shock: "-0.200000", currency_shock: "-0.180000", systematic_risk: "0.9500", time_horizon: "180", time_step: "1.0000", iterations_count: "1200" }
+        };
+
         document.querySelectorAll(".scenario-form input[data-slider-min]").forEach((numberInput) => {
             const slider = document.createElement("input");
             slider.type = "range";
@@ -224,6 +271,24 @@
                 slider.value = numberInput.value;
             });
         });
+
+        const presetField = document.getElementById("id_preset");
+        if (presetField) {
+            presetField.addEventListener("change", () => {
+                const values = presetValues[presetField.value];
+                if (!values) {
+                    return;
+                }
+                Object.entries(values).forEach(([name, value]) => {
+                    const input = document.getElementById(`id_${name}`);
+                    if (!input) {
+                        return;
+                    }
+                    input.value = value;
+                    input.dispatchEvent(new Event("input", { bubbles: true }));
+                });
+            });
+        }
     })();
 </script>
 {% endblock %}

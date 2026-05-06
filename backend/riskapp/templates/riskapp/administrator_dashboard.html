@@ -1,0 +1,254 @@
+{% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
+
+{% block title %}{% t "admin_dashboard_title" %} | {% t "site_name" %}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="hero-meta">
+        <div class="hero-content">
+            <div class="section-kicker">{% t "admin_dashboard_kicker" %}</div>
+            <h1>{% t "admin_dashboard_title" %} Market Risk</h1>
+            <p class="muted">{% t "admin_dashboard_subtitle" %}</p>
+            <div class="page-actions">
+                <a class="button button-secondary" href="/django-admin/">{% t "admin_manage_in_django" %}</a>
+            </div>
+        </div>
+        <div class="hero-spotlight">
+            <span class="pill">{% t "nav_admin" %}</span>
+            <div class="eyebrow-value">{{ users_list|length }}</div>
+            <div class="metric-note">{% t "admin_users" %}</div>
+        </div>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card span-12">
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% t "admin_users" %}</div>
+                <h2>{% t "admin_users" %}</h2>
+            </div>
+        </div>
+        {% if users_list %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>{% t "username" %}</th>
+                            <th>{% t "email" %}</th>
+                            <th>{% t "admin_role" %}</th>
+                            <th>{% t "admin_status" %}</th>
+                            <th>{% t "portfolios" %}</th>
+                            <th>{% t "scenarios" %}</th>
+                            <th>{% t "action" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user_item in users_list %}
+                            <tr>
+                                <td>{{ user_item.username }}</td>
+                                <td>{{ user_item.email|default:"-" }}</td>
+                                <td>{% if user_item.is_staff or user_item.is_superuser %}{% t "admin_administrator" %}{% else %}{% t "admin_regular_user" %}{% endif %}</td>
+                                <td>{% if user_item.is_active %}{% t "admin_active" %}{% else %}{% t "admin_blocked" %}{% endif %}</td>
+                                <td>{{ user_item.portfolios_count }}</td>
+                                <td>{{ user_item.scenarios_count }}</td>
+                                <td>
+                                    <div class="page-actions" style="margin-top: 0;">
+                                        {% if user_item.id != request.user.id %}
+                                            <form method="post" action="{% url 'riskapp:administrator_toggle_user' user_item.id %}">
+                                                {% csrf_token %}
+                                                <button type="submit" class="button button-secondary">
+                                                    {% if user_item.is_active %}{% t "admin_block_user" %}{% else %}{% t "admin_unblock_user" %}{% endif %}
+                                                </button>
+                                            </form>
+                                            <form method="post" action="{% url 'riskapp:administrator_delete_user' user_item.id %}" onsubmit="return confirm('{% t "admin_delete_user" %}?');">
+                                                {% csrf_token %}
+                                                <button type="submit" class="button button-ghost">{% t "admin_delete_user" %}</button>
+                                            </form>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty">{% t "admin_no_users" %}</div>
+        {% endif %}
+    </article>
+
+    <article class="card span-12">
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% t "admin_portfolios" %}</div>
+                <h2>{% t "admin_portfolios" %}</h2>
+            </div>
+        </div>
+        {% if portfolios %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>{% t "name" %}</th>
+                            <th>{% t "username" %}</th>
+                            <th>{% t "current_value" %}</th>
+                            <th>{% t "updated" %}</th>
+                            <th>{% t "action" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for portfolio in portfolios %}
+                            <tr>
+                                <td>{{ portfolio.name }}</td>
+                                <td>{{ portfolio.user.username }}</td>
+                                <td>{{ portfolio.current_value|floatformat:2 }}</td>
+                                <td>{{ portfolio.updated_at|date:"Y-m-d H:i" }}</td>
+                                <td>
+                                    <div class="page-actions" style="margin-top: 0;">
+                                        <a class="button button-secondary" href="{% url 'riskapp:portfolio_detail' portfolio.id %}">{% t "admin_open_portfolio" %}</a>
+                                        <form method="post" action="{% url 'riskapp:administrator_delete_portfolio' portfolio.id %}" onsubmit="return confirm('{% t "admin_delete_portfolio" %}?');">
+                                            {% csrf_token %}
+                                            <button type="submit" class="button button-ghost">{% t "admin_delete_portfolio" %}</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty">{% t "admin_no_portfolios" %}</div>
+        {% endif %}
+    </article>
+
+    <article class="card span-12">
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% t "admin_scenarios" %}</div>
+                <h2>{% t "admin_scenarios" %}</h2>
+            </div>
+        </div>
+        {% if scenarios %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>{% t "name" %}</th>
+                            <th>{% t "username" %}</th>
+                            <th>{% t "portfolio" %}</th>
+                            <th>{% t "scenario_preset" %}</th>
+                            <th>{% t "updated" %}</th>
+                            <th>{% t "action" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for scenario in scenarios %}
+                            <tr>
+                                <td>{{ scenario.name }}</td>
+                                <td>{{ scenario.user.username }}</td>
+                                <td>{{ scenario.portfolio.name }}</td>
+                                <td>{{ scenario.get_preset_display }}</td>
+                                <td>{{ scenario.updated_at|date:"Y-m-d H:i" }}</td>
+                                <td>
+                                    <div class="page-actions" style="margin-top: 0;">
+                                        <a class="button button-secondary" href="{% url 'riskapp:scenario_update' scenario.id %}">{% t "edit" %}</a>
+                                        <form method="post" action="{% url 'riskapp:administrator_delete_scenario' scenario.id %}" onsubmit="return confirm('{% t "admin_delete_scenario" %}?');">
+                                            {% csrf_token %}
+                                            <button type="submit" class="button button-ghost">{% t "admin_delete_scenario" %}</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty">{% t "admin_no_scenarios" %}</div>
+        {% endif %}
+    </article>
+
+    <article class="card span-12">
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% t "admin_results" %}</div>
+                <h2>{% t "admin_results" %}</h2>
+            </div>
+        </div>
+        {% if results %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>{% t "scenario" %}</th>
+                            <th>{% t "username" %}</th>
+                            <th>{% t "portfolio" %}</th>
+                            <th>{% t "final_value" %}</th>
+                            <th>{% t "executed" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for result in results %}
+                            <tr>
+                                <td><a href="{% url 'riskapp:result_detail' result.id %}">{{ result.scenario.name }}</a></td>
+                                <td>{{ result.scenario.user.username }}</td>
+                                <td>{{ result.scenario.portfolio.name }}</td>
+                                <td>{{ result.final_value|floatformat:2 }}</td>
+                                <td>{{ result.execution_time|date:"Y-m-d H:i" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty">{% t "admin_no_results" %}</div>
+        {% endif %}
+    </article>
+
+    <article class="card span-12">
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% if ui_language == "ru" %}Сделки{% else %}Trades{% endif %}</div>
+                <h2>{% if ui_language == "ru" %}Последние биржевые операции{% else %}Recent trade operations{% endif %}</h2>
+            </div>
+        </div>
+        {% if operations %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>{% t "username" %}</th>
+                            <th>{% t "portfolio" %}</th>
+                            <th>{% if ui_language == "ru" %}Инструмент{% else %}Instrument{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Тип{% else %}Type{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Количество{% else %}Quantity{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Цена{% else %}Price{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Комиссия{% else %}Commission{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Дата{% else %}Date{% endif %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for operation in operations %}
+                            <tr>
+                                <td>{{ operation.user.username }}</td>
+                                <td>{{ operation.portfolio.name }}</td>
+                                <td>{{ operation.instrument.ticker }}</td>
+                                <td>{% if operation.operation_type == "BUY" %}{% if ui_language == "ru" %}Покупка{% else %}Buy{% endif %}{% else %}{% if ui_language == "ru" %}Продажа{% else %}Sell{% endif %}{% endif %}</td>
+                                <td>{{ operation.quantity }}</td>
+                                <td>{{ operation.price_per_unit|money_by_currency:operation.instrument.currency }}</td>
+                                <td>{{ operation.commission|money_by_currency:operation.instrument.currency }}</td>
+                                <td>{{ operation.executed_at|date:"Y-m-d H:i" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty">{% if ui_language == "ru" %}Сделок пока нет{% else %}No trades yet{% endif %}</div>
+        {% endif %}
+    </article>
+</section>
+{% endblock %}

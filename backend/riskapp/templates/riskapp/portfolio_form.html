@@ -32,6 +32,12 @@
             {{ form.description }}
             {{ form.description.errors }}
         </label>
+        <label>
+            {% t "base_currency" %}
+            {{ form.base_currency }}
+            <small class="muted">{% t "base_currency_hint" %}</small>
+            {{ form.base_currency.errors }}
+        </label>
         <div class="form-actions">
             <button type="submit" class="button button-primary">
                 {% if mode == "edit" %}{% t "update_portfolio" %}{% else %}{% t "save_portfolio" %}{% endif %}

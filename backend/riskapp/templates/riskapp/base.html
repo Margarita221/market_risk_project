@@ -310,6 +310,184 @@
             margin-top: 8px;
         }
 
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .summary-card {
+            padding: 18px;
+            border-radius: 20px;
+            border: 1px solid rgba(216, 204, 179, 0.9);
+            background: rgba(255, 252, 247, 0.82);
+        }
+
+        .summary-card strong {
+            display: block;
+            margin-top: 10px;
+            font-size: 1.85rem;
+            letter-spacing: -0.04em;
+        }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .filter-grid .wide {
+            grid-column: span 2;
+        }
+
+        .metric-with-unit {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .metric-unit {
+            color: var(--muted);
+            font-size: 0.95rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .inline-unit {
+            color: var(--muted);
+            font-size: 0.9rem;
+            margin-left: 4px;
+        }
+
+        .meter-list {
+            display: grid;
+            gap: 18px;
+        }
+
+        .risk-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            margin-top: 18px;
+        }
+
+        .risk-card {
+            padding: 16px;
+            border-radius: 18px;
+            border: 1px solid rgba(216, 204, 179, 0.9);
+            background: rgba(255, 252, 247, 0.78);
+        }
+
+        .meter {
+            display: grid;
+            gap: 8px;
+        }
+
+        .meter-top {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .meter-track {
+            height: 12px;
+            border-radius: 999px;
+            background: rgba(216, 204, 179, 0.55);
+            overflow: hidden;
+        }
+
+        .meter-fill {
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--gold), var(--accent));
+        }
+
+        .meter-note {
+            color: var(--muted);
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
+
+        .range-band {
+            margin-top: 18px;
+        }
+
+        .range-track {
+            position: relative;
+            height: 14px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(182, 73, 51, 0.18), rgba(183, 137, 51, 0.2), rgba(47, 125, 85, 0.18));
+            border: 1px solid rgba(216, 204, 179, 0.9);
+        }
+
+        .range-points {
+            position: relative;
+            height: 18px;
+            margin-top: -16px;
+        }
+
+        .range-dot {
+            position: absolute;
+            top: 0;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: 2px solid rgba(255, 252, 247, 0.96);
+            box-shadow: 0 6px 14px rgba(50, 36, 20, 0.12);
+            transform: translateX(-50%);
+        }
+
+        .range-marker-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .range-marker-card {
+            padding: 14px;
+            border-radius: 18px;
+            border: 1px solid rgba(216, 204, 179, 0.9);
+            background: rgba(255, 252, 247, 0.78);
+        }
+
+        .range-marker-card strong {
+            display: block;
+            font-size: 0.92rem;
+            margin-bottom: 8px;
+        }
+
+        .range-marker-card span {
+            display: block;
+            color: var(--muted);
+            font-size: 0.84rem;
+        }
+
+        .range-footer {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-top: 18px;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
+        .instrument-summary-table td small {
+            display: block;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+
+        .tag-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
         .table-wrap {
             overflow-x: auto;
         }
@@ -503,11 +681,12 @@
         .chart-wrap {
             position: relative;
             min-width: 0;
+            padding-left: 26px;
         }
 
         .chart-axis-label {
             position: absolute;
-            left: 6px;
+            left: 0;
             top: 50%;
             transform: translateY(-50%) rotate(-90deg);
             transform-origin: left top;
@@ -660,7 +839,11 @@
             }
 
             .chart-grid,
-            .scenario-controls {
+            .scenario-controls,
+            .filter-grid,
+            .summary-grid,
+            .range-marker-grid,
+            .risk-grid {
                 grid-template-columns: 1fr;
             }
 
@@ -694,9 +877,10 @@
                     <a href="{% url 'riskapp:portfolios' %}">{% t "nav_portfolios" %}</a>
                     <a href="{% url 'riskapp:scenarios' %}">{% t "nav_scenarios" %}</a>
                     <a href="{% url 'riskapp:results' %}">{% t "nav_results" %}</a>
+                    <a href="{% url 'riskapp:strategy_compare' %}">{% if ui_language == "ru" %}Стратегии{% else %}Strategies{% endif %}</a>
                     <a href="{% url 'riskapp:profile' %}">{% t "nav_profile" %}</a>
                     {% if user.is_staff or user.is_superuser %}
-                        <a href="{% url 'admin:index' %}">{% t "nav_admin" %}</a>
+                        <a href="{% url 'riskapp:administrator_dashboard' %}">{% t "nav_admin" %}</a>
                     {% endif %}
                     <form method="post" action="{% url 'logout' %}">
                         {% csrf_token %}

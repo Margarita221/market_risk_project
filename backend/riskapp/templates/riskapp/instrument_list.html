@@ -26,7 +26,7 @@
 </section>
 
 <section class="card">
-    <form method="get" class="form-card">
+    <form method="get" class="form-card" id="instrument-filter-form">
         {% if portfolio %}
             <input type="hidden" name="portfolio" value="{{ portfolio.id }}">
         {% endif %}
@@ -40,9 +40,13 @@
                 <select name="instrument_type">
                     <option value="">{% t "all_types" %}</option>
                     {% for value in instrument_types %}
-                        <option value="{{ value }}"{% if instrument_type == value %} selected{% endif %}>{{ value }}</option>
+                        <option value="{{ value }}"{% if instrument_type == value %} selected{% endif %}>{{ instrument_type_labels|get_item:value|default:value }}</option>
                     {% endfor %}
                 </select>
+            </label>
+            <label>
+                {% t "sector" %}
+                {{ form.sector }}
             </label>
             <label>
                 {% t "currency" %}
@@ -69,60 +73,75 @@
     </form>
 </section>
 
-<section class="card">
-    {% if page_obj.object_list %}
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>{% t "ticker" %}</th>
-                        <th>{% t "name" %}</th>
-                        <th>{% t "type" %}</th>
-                        <th>{% t "currency" %}</th>
-                        <th>{% t "market_price" %}</th>
-                        <th>{% t "updated" %}</th>
-                        {% if portfolio %}
-                            <th>{% t "action" %}</th>
-                        {% endif %}
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for instrument in page_obj.object_list %}
-                        <tr>
-                            <td>{{ instrument.ticker }}</td>
-                            <td>{{ instrument.name }}</td>
-                            <td>{{ instrument.instrument_type }}</td>
-                            <td>{{ instrument.currency }}</td>
-                            <td>{{ instrument.current_price|floatformat:4 }}</td>
-                            <td>{{ instrument.last_price_updated_at|date:"Y-m-d H:i"|default:"-" }}</td>
-                            {% if portfolio %}
-                                <td>
-                                    <form method="post" action="{% url 'riskapp:portfolio_add_position' portfolio.id %}" class="page-actions" style="margin-top: 0;">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="instrument" value="{{ instrument.id }}">
-                                        <input type="number" name="quantity" min="1" value="1" style="max-width: 100px;">
-                                        <button type="submit" class="button button-primary">{% t "add_to_portfolio" %}</button>
-                                    </form>
-                                </td>
-                            {% endif %}
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% if page_obj.paginator.num_pages > 1 %}
-            <div class="page-actions">
-                {% if page_obj.has_previous %}
-                    <a class="button button-ghost" href="?page={{ page_obj.previous_page_number }}{% if query %}&query={{ query }}{% endif %}{% if instrument_type %}&instrument_type={{ instrument_type }}{% endif %}{% if currency %}&currency={{ currency }}{% endif %}{% if price_min %}&price_min={{ price_min }}{% endif %}{% if price_max %}&price_max={{ price_max }}{% endif %}{% if portfolio %}&portfolio={{ portfolio.id }}{% endif %}">{% t "previous_page" %}</a>
-                {% endif %}
-                <span class="pill">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
-                {% if page_obj.has_next %}
-                    <a class="button button-ghost" href="?page={{ page_obj.next_page_number }}{% if query %}&query={{ query }}{% endif %}{% if instrument_type %}&instrument_type={{ instrument_type }}{% endif %}{% if currency %}&currency={{ currency }}{% endif %}{% if price_min %}&price_min={{ price_min }}{% endif %}{% if price_max %}&price_max={{ price_max }}{% endif %}{% if portfolio %}&portfolio={{ portfolio.id }}{% endif %}">{% t "next_page" %}</a>
-                {% endif %}
-            </div>
-        {% endif %}
-    {% else %}
-        <div class="empty">{% t "no_instruments_found" %}</div>
-    {% endif %}
-</section>
+<div id="instrument-results">
+    {% include "riskapp/partials/instrument_catalog_results.html" %}
+</div>
+
+<script>
+    (() => {
+        const form = document.getElementById("instrument-filter-form");
+        const results = document.getElementById("instrument-results");
+        if (!form || !results) {
+            return;
+        }
+
+        let debounceTimer = null;
+
+        const bindResultActions = () => {
+            results.querySelectorAll(".instrument-page-link").forEach((link) => {
+                link.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    loadResults(link.getAttribute("href"));
+                });
+            });
+
+            results.querySelectorAll(".instrument-add-form").forEach((rowForm) => {
+                rowForm.addEventListener("submit", async (event) => {
+                    event.preventDefault();
+                    const formData = new FormData(rowForm);
+                    const response = await fetch(rowForm.action, {
+                        method: "POST",
+                        headers: { "X-Requested-With": "XMLHttpRequest" },
+                        body: formData,
+                    });
+                    const payload = await response.json();
+                    const feedback = results.querySelector("#instrument-catalog-feedback");
+                    if (feedback) {
+                        feedback.innerHTML = `<div class="message">${payload.message}</div>`;
+                    }
+                });
+            });
+        };
+
+        const loadResults = async (url = null) => {
+            const targetUrl = url || `${form.action || window.location.pathname}?${new URLSearchParams(new FormData(form)).toString()}&partial=1`;
+            const response = await fetch(targetUrl, {
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+            });
+            const payload = await response.json();
+            results.innerHTML = payload.html;
+            bindResultActions();
+            if (!url) {
+                const cleanUrl = `${window.location.pathname}?${new URLSearchParams(new FormData(form)).toString()}`;
+                window.history.replaceState({}, "", cleanUrl);
+            }
+        };
+
+        form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            loadResults();
+        });
+
+        form.querySelectorAll("input, select").forEach((field) => {
+            const handler = () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => loadResults(), 250);
+            };
+            field.addEventListener("input", handler);
+            field.addEventListener("change", handler);
+        });
+
+        bindResultActions();
+    })();
+</script>
 {% endblock %}

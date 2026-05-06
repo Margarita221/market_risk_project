@@ -8,6 +8,12 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
+            "--mode",
+            choices=["full", "existing-prices"],
+            default="full",
+            help="full imports the universe, existing-prices refreshes only already saved instruments.",
+        )
+        parser.add_argument(
             "--market",
             action="append",
             dest="markets",
@@ -15,17 +21,30 @@ class Command(BaseCommand):
             help="MOEX market to import. Can be used multiple times.",
         )
         parser.add_argument(
-            "--limit",
+            "--limit-total",
             type=int,
             default=None,
-            help="Optional limit for imported instruments.",
+            help="Optional total limit across all selected markets.",
+        )
+        parser.add_argument(
+            "--limit-per-market",
+            type=int,
+            default=None,
+            help="Optional limit applied separately inside each selected market.",
         )
 
     def handle(self, *args, **options):
-        markets = options["markets"] or ["shares", "bonds"]
-        stats = sync_moex_instruments(markets=markets, limit=options["limit"])
+        markets = options["markets"] or ["shares", "bonds", "etf"]
+        existing_only = options["mode"] == "existing-prices"
+        stats = sync_moex_instruments(
+            markets=markets,
+            limit_total=options["limit_total"],
+            limit_per_market=options["limit_per_market"],
+            existing_only=existing_only,
+        )
         self.stdout.write(
             self.style.SUCCESS(
-                f"MOEX sync completed. Created: {stats.created}, updated: {stats.updated}, skipped: {stats.skipped}."
+                f"MOEX sync completed in mode '{options['mode']}'. "
+                f"Created: {stats.created}, updated: {stats.updated}, skipped: {stats.skipped}."
             )
         )

@@ -7,6 +7,11 @@ app_name = "riskapp"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("admin/", views.administrator_dashboard, name="administrator_dashboard"),
+    path("admin/users/<int:user_id>/toggle/", views.administrator_toggle_user, name="administrator_toggle_user"),
+    path("admin/users/<int:user_id>/delete/", views.administrator_delete_user, name="administrator_delete_user"),
+    path("admin/portfolios/<int:portfolio_id>/delete/", views.administrator_delete_portfolio, name="administrator_delete_portfolio"),
+    path("admin/scenarios/<int:scenario_id>/delete/", views.administrator_delete_scenario, name="administrator_delete_scenario"),
     path("language/<str:language>/", views.switch_language, name="switch_language"),
     path("accounts/signup/", views.signup, name="signup"),
     path("accounts/profile/", views.profile, name="profile"),
@@ -19,6 +24,8 @@ urlpatterns = [
     path("portfolios/<int:portfolio_id>/edit/", views.portfolio_update, name="portfolio_update"),
     path("portfolios/<int:portfolio_id>/delete/", views.portfolio_delete, name="portfolio_delete"),
     path("portfolios/<int:portfolio_id>/positions/add/", views.portfolio_add_position, name="portfolio_add_position"),
+    path("portfolios/<int:portfolio_id>/operations/", views.portfolio_operations, name="portfolio_operations"),
+    path("portfolios/<int:portfolio_id>/operations/create/", views.portfolio_operation_create, name="portfolio_operation_create"),
     path("portfolios/<int:portfolio_id>/scenarios/run/", views.portfolio_scenario_run, name="portfolio_scenario_run"),
     path(
         "portfolios/<int:portfolio_id>/positions/<int:position_id>/update/",
@@ -37,4 +44,5 @@ urlpatterns = [
     path("scenarios/<int:scenario_id>/run/", views.run_scenario, name="run_scenario"),
     path("results/", views.result_list, name="results"),
     path("results/<int:result_id>/", views.result_detail, name="result_detail"),
+    path("strategies/compare/", views.strategy_compare, name="strategy_compare"),
 ]

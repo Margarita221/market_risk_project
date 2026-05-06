@@ -38,5 +38,5 @@ urlpatterns = [
     path('accounts/password-reset/done/', LocalizedPasswordResetDoneView.as_view(), name='account_password_reset_done'),
     path('accounts/reset/<uidb64>/<token>/', LocalizedPasswordResetConfirmView.as_view(), name='account_password_reset_confirm'),
     path('accounts/reset/done/', LocalizedPasswordResetCompleteView.as_view(), name='account_password_reset_complete'),
-    path('admin/', admin.site.urls),
+    path('django-admin/', admin.site.urls),
 ]

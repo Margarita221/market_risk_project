@@ -16,64 +16,175 @@
         </div>
         <div class="hero-spotlight">
             <span class="pill">{% t "scenarios" %}</span>
-            <div class="eyebrow-value">{{ scenarios|length }}</div>
-            <div class="metric-note">{% t "results" %} / {% t "iterations" %}</div>
+            <div class="eyebrow-value">{{ scenario_summary.count }}</div>
+            <div class="metric-note">{% t "completed_runs" %}: {{ scenario_summary.total_results }}</div>
+            <div class="tag-row">
+                <span class="pill">{% t "avg_horizon" %}: {{ scenario_summary.avg_horizon }} {% t "unit_days" %}</span>
+                <span class="pill">{% t "avg_iterations" %}: {{ scenario_summary.avg_iterations }}</span>
+            </div>
         </div>
     </div>
 </section>
 
 <section class="card">
-    {% if scenarios %}
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>{% t "name" %}</th>
-                        <th>{% t "portfolio" %}</th>
-                        <th>{% t "scenario_preset" %}</th>
-                        <th>{% t "trend" %}</th>
-                        <th>{% t "volatility" %}</th>
-                        <th>{% t "market_shock" %}</th>
-                        <th>{% t "currency_shock" %}</th>
-                        <th>{% t "horizon" %}</th>
-                        <th>{% t "iterations" %}</th>
-                        <th>{% t "results" %}</th>
-                        <th>{% t "action" %}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for scenario in scenarios %}
-                        <tr>
-                            <td>{{ scenario.name }}</td>
-                            <td><a href="{% url 'riskapp:portfolio_detail' scenario.portfolio_id %}">{{ scenario.portfolio.name }}</a></td>
-                            <td>{{ scenario.get_preset_display }}</td>
-                            <td>{{ scenario.trend|floatformat:4 }}</td>
-                            <td>{{ scenario.volatility|floatformat:4 }}</td>
-                            <td>{{ scenario.market_shock|floatformat:4 }}</td>
-                            <td>{{ scenario.currency_shock|floatformat:4 }}</td>
-                            <td>{{ scenario.time_horizon }} {% t "days" %}</td>
-                            <td>{{ scenario.iterations_count }}</td>
-                            <td><span class="pill">{{ scenario.results_count }}</span></td>
-                            <td>
-                                <div class="page-actions" style="margin-top: 0;">
-                                    <form method="post" action="{% url 'riskapp:run_scenario' scenario.id %}">
-                                        {% csrf_token %}
-                                        <button type="submit" class="button button-primary">{% t "run" %}</button>
-                                    </form>
-                                    <a href="{% url 'riskapp:scenario_update' scenario.id %}" class="button button-secondary">{% t "edit" %}</a>
-                                    <form method="post" action="{% url 'riskapp:scenario_delete' scenario.id %}" onsubmit="return confirm('{% t "confirm_delete_scenario" %}');">
-                                        {% csrf_token %}
-                                        <button type="submit" class="button button-ghost">{% t "delete" %}</button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <div class="card-header">
+        <div>
+            <div class="section-kicker">{% t "scenario_filters" %}</div>
+            <h2>{% t "scenario_filters" %}</h2>
         </div>
-    {% else %}
-        <div class="empty">{% t "no_scenarios_for_user" %}</div>
-    {% endif %}
+    </div>
+    <p class="muted">{% t "scenario_filters_subtitle" %}</p>
+    <form method="get" class="form-card">
+        <div class="filter-grid">
+            <label class="wide">
+                {% t "search_scenario" %}
+                <input type="text" name="query" value="{{ query }}" placeholder="{% t "scenario_search_placeholder" %}">
+            </label>
+            <label>
+                {% t "portfolio" %}
+                <select name="portfolio">
+                    <option value="">{% t "all_portfolios" %}</option>
+                    {% for portfolio in portfolios %}
+                        <option value="{{ portfolio.id }}"{% if selected_portfolio == portfolio.id|stringformat:"s" %} selected{% endif %}>{{ portfolio.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                {% t "scenario_preset" %}
+                <select name="preset">
+                    <option value="">{% t "all_presets" %}</option>
+                    {% for value, label in presets %}
+                        <option value="{{ value }}"{% if selected_preset == value %} selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="button button-primary">{% t "show_results" %}</button>
+            <a class="button button-secondary" href="{% url 'riskapp:scenarios' %}">{% t "clear_filters" %}</a>
+        </div>
+    </form>
+</section>
+
+<section class="card">
+    <div class="summary-grid">
+        <div class="summary-card">
+            <div class="section-kicker">{% t "avg_horizon" %}</div>
+            <strong>{{ scenario_summary.avg_horizon }} <span class="inline-unit">{% t "unit_days" %}</span></strong>
+            <div class="metric-note">{% t "horizon_hint" %}</div>
+        </div>
+        <div class="summary-card">
+            <div class="section-kicker">{% t "avg_iterations" %}</div>
+            <strong>{{ scenario_summary.avg_iterations }} <span class="inline-unit">{% t "unit_iterations" %}</span></strong>
+            <div class="metric-note">{% t "iterations_hint" %}</div>
+        </div>
+        <div class="summary-card">
+            <div class="section-kicker">{% t "completed_runs" %}</div>
+            <strong>{{ scenario_summary.total_results }} <span class="inline-unit">{% t "unit_count" %}</span></strong>
+            <div class="metric-note">{% t "results" %}</div>
+        </div>
+        <div class="summary-card">
+            <div class="section-kicker">{% t "scenario_pressure" %}</div>
+            <strong>{{ scenario_summary.stress_share|floatformat:1 }}<span class="inline-unit">{% t "unit_percent" %}</span></strong>
+            <div class="metric-note">{% t "metric_probability_of_drawdown" %}</div>
+        </div>
+    </div>
+</section>
+
+<section class="grid">
+    <article class="card span-4">
+        <div class="card-header">
+            <div>
+                <div class="section-kicker">{% t "scenario_pressure" %}</div>
+                <h2>{% t "scenario_pressure" %}</h2>
+            </div>
+        </div>
+        <p class="muted">{% t "scenario_pressure_subtitle" %}</p>
+        <div class="meter-list">
+            <div class="meter">
+                <div class="meter-top">
+                    <strong>{% t "market_shock" %}</strong>
+                    <span>{{ scenario_pressure.market }}{% t "unit_percent" %}</span>
+                </div>
+                <div class="meter-track"><div class="meter-fill" style="width: {{ scenario_pressure.market_width }}%;"></div></div>
+            </div>
+            <div class="meter">
+                <div class="meter-top">
+                    <strong>{% t "currency_shock" %}</strong>
+                    <span>{{ scenario_pressure.currency }}{% t "unit_percent" %}</span>
+                </div>
+                <div class="meter-track"><div class="meter-fill" style="width: {{ scenario_pressure.currency_width }}%;"></div></div>
+            </div>
+            <div class="meter">
+                <div class="meter-top">
+                    <strong>{% t "interest_rate_shock" %}</strong>
+                    <span>{{ scenario_pressure.rate }}{% t "unit_percent" %}</span>
+                </div>
+                <div class="meter-track"><div class="meter-fill" style="width: {{ scenario_pressure.rate_width }}%;"></div></div>
+            </div>
+        </div>
+    </article>
+
+    <article class="card span-8">
+        {% if scenarios %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>{% t "name" %}</th>
+                            <th>{% t "portfolio" %}</th>
+                            <th>{% t "scenario_preset" %}</th>
+                            <th>{% t "trend" %}</th>
+                            <th>{% t "volatility" %}</th>
+                            <th>{% t "market_shock" %}</th>
+                            <th>{% t "currency_shock" %}</th>
+                            <th>{% t "interest_rate_shock" %}</th>
+                            <th>{% t "horizon" %}</th>
+                            <th>{% t "iterations" %}</th>
+                            <th>{% t "results" %}</th>
+                            <th>{% t "action" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for scenario in scenarios %}
+                            <tr>
+                                <td>
+                                    <strong>{{ scenario.name }}</strong>
+                                    {% if scenario.description %}
+                                        <div class="metric-note">{{ scenario.description|truncatechars:90 }}</div>
+                                    {% endif %}
+                                </td>
+                                <td><a href="{% url 'riskapp:portfolio_detail' scenario.portfolio_id %}">{{ scenario.portfolio.name }}</a></td>
+                                <td>{{ scenario.get_preset_display }}</td>
+                                <td>{{ scenario.trend|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
+                                <td>{{ scenario.volatility|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
+                                <td>{{ scenario.market_shock|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
+                                <td>{{ scenario.currency_shock|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
+                                <td>{{ scenario.interest_rate_shock|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
+                                <td>{{ scenario.time_horizon }} <span class="inline-unit">{% t "unit_days" %}</span></td>
+                                <td>{{ scenario.iterations_count }} <span class="inline-unit">{% t "unit_iterations" %}</span></td>
+                                <td><span class="pill">{{ scenario.results_count }}</span></td>
+                                <td>
+                                    <div class="page-actions" style="margin-top: 0;">
+                                        <form method="post" action="{% url 'riskapp:run_scenario' scenario.id %}">
+                                            {% csrf_token %}
+                                            <button type="submit" class="button button-primary">{% t "run" %}</button>
+                                        </form>
+                                        <a href="{% url 'riskapp:scenario_update' scenario.id %}" class="button button-secondary">{% t "edit" %}</a>
+                                        <form method="post" action="{% url 'riskapp:scenario_delete' scenario.id %}" onsubmit="return confirm('{% t "confirm_delete_scenario" %}');">
+                                            {% csrf_token %}
+                                            <button type="submit" class="button button-ghost">{% t "delete" %}</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty">{% t "no_scenarios_for_user" %}</div>
+        {% endif %}
+    </article>
 </section>
 {% endblock %}

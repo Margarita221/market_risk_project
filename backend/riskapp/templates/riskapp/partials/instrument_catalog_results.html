@@ -1,0 +1,95 @@
+{% load riskapp_i18n %}
+
+<section class="grid" style="margin-bottom: 18px;">
+    <article class="card span-4">
+        <div class="section-kicker">{% t "instrument_type_stock" %}</div>
+        <div class="metric">{{ filtered_counts.stock }}</div>
+        <div class="metric-note">{% t "in_catalog_now" %}</div>
+    </article>
+    <article class="card span-4">
+        <div class="section-kicker">{% t "instrument_type_bond" %}</div>
+        <div class="metric">{{ filtered_counts.bond }}</div>
+        <div class="metric-note">{% t "in_catalog_now" %}</div>
+    </article>
+    <article class="card span-4">
+        <div class="section-kicker">{% t "instrument_type_etf" %}</div>
+        <div class="metric">{{ filtered_counts.etf }}</div>
+        <div class="metric-note">{% t "in_catalog_now" %}</div>
+    </article>
+</section>
+
+<section class="card">
+    <div id="instrument-catalog-feedback"></div>
+    {% if page_obj.object_list %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>{% t "ticker" %}</th>
+                        <th>{% t "name" %}</th>
+                        <th>{% t "type" %}</th>
+                        <th>{% t "sector" %}</th>
+                        <th>{% t "currency" %}</th>
+                        <th>{% t "market_price" %}</th>
+                        <th>{% if ui_language == "ru" %}Доходность{% else %}Yield{% endif %}</th>
+                        <th>{% t "updated" %}</th>
+                        {% if portfolio %}
+                            <th>{% t "action" %}</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for instrument in page_obj.object_list %}
+                        <tr>
+                            <td>{{ instrument.ticker }}</td>
+                            <td>{{ instrument.name }}</td>
+                            <td>{{ instrument_type_labels|get_item:instrument.normalized_type|default:instrument.display_type }}</td>
+                            <td>{{ sector_labels|get_item:instrument.sector|default:instrument.sector|default:"-" }}</td>
+                            <td>{{ instrument.currency }}</td>
+                            <td>{{ instrument.current_price|money_by_currency:instrument.currency }}</td>
+                            <td>
+                                {% if instrument.normalized_type == "bond" %}
+                                    {{ instrument.coupon_yield|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span>
+                                {% else %}
+                                    {{ instrument.dividend_yield|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ instrument.last_price_updated_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                            {% if portfolio %}
+                                <td>
+                                    <form method="post" action="{% url 'riskapp:portfolio_add_position' portfolio.id %}" class="page-actions instrument-add-form" style="margin-top: 0;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="instrument" value="{{ instrument.id }}">
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <input type="number" name="quantity" min="1" value="1" style="max-width: 100px;">
+                                        <button type="submit" class="button button-primary">{% if ui_language == "ru" %}Купить{% else %}Buy{% endif %}</button>
+                                    </form>
+                                    <small class="muted">
+                                        {% if ui_language == "ru" %}
+                                            Цена берётся из базы, комиссия считается автоматически.
+                                        {% else %}
+                                            Price comes from the database and commission is calculated automatically.
+                                        {% endif %}
+                                    </small>
+                                </td>
+                            {% endif %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if page_obj.paginator.num_pages > 1 %}
+            <div class="page-actions">
+                {% if page_obj.has_previous %}
+                    <a class="button button-ghost instrument-page-link" href="?page={{ page_obj.previous_page_number }}{% if query %}&query={{ query }}{% endif %}{% if instrument_type %}&instrument_type={{ instrument_type }}{% endif %}{% if sector %}&sector={{ sector }}{% endif %}{% if currency %}&currency={{ currency }}{% endif %}{% if price_min %}&price_min={{ price_min }}{% endif %}{% if price_max %}&price_max={{ price_max }}{% endif %}{% if portfolio %}&portfolio={{ portfolio.id }}{% endif %}">{% t "previous_page" %}</a>
+                {% endif %}
+                <span class="pill">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}
+                    <a class="button button-ghost instrument-page-link" href="?page={{ page_obj.next_page_number }}{% if query %}&query={{ query }}{% endif %}{% if instrument_type %}&instrument_type={{ instrument_type }}{% endif %}{% if sector %}&sector={{ sector }}{% endif %}{% if currency %}&currency={{ currency }}{% endif %}{% if price_min %}&price_min={{ price_min }}{% endif %}{% if price_max %}&price_max={{ price_max }}{% endif %}{% if portfolio %}&portfolio={{ portfolio.id }}{% endif %}">{% t "next_page" %}</a>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="empty">{% t "no_instruments_found" %}</div>
+    {% endif %}
+</section>

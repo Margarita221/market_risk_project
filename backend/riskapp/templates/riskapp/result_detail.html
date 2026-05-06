@@ -17,8 +17,14 @@
         </div>
         <div class="hero-spotlight">
             <span class="pill">{{ status_label }}</span>
-            <div class="eyebrow-value">{{ result.final_value|floatformat:2 }}</div>
-            <div class="metric-note">{% t "final_value" %}</div>
+            <div class="eyebrow-value">{{ result.final_value|money_value:2 }}</div>
+            <div class="metric-note">{% t "final_value" %} - {{ portfolio_unit_label }}</div>
+            {% if result.chart_data %}
+                <div class="tag-row">
+                    <span class="pill">{{ result.chart_data.iterations }} {% t "unit_iterations" %}</span>
+                    <span class="pill">{{ result.chart_data.steps }} {% t "unit_steps" %}</span>
+                </div>
+            {% endif %}
         </div>
     </div>
 </section>
@@ -26,19 +32,35 @@
 <section class="grid">
     <article class="card span-3">
         <div class="section-kicker">{% t "expected_return" %}</div>
-        <div class="metric">{{ result.expected_return|floatformat:4 }}</div>
+        <div class="metric-with-unit">
+            <div class="metric">{{ result.expected_return|percent_value:2 }}</div>
+            <span class="metric-unit">{% t "unit_percent" %}</span>
+        </div>
+        <div class="metric-note">{% t "expected_return_percent" %}</div>
     </article>
     <article class="card span-3">
         <div class="section-kicker">{% t "volatility" %}</div>
-        <div class="metric">{{ result.portfolio_volatility|floatformat:4 }}</div>
+        <div class="metric-with-unit">
+            <div class="metric">{{ result.portfolio_volatility|percent_value:2 }}</div>
+            <span class="metric-unit">{% t "unit_percent" %}</span>
+        </div>
+        <div class="metric-note">{% t "volatility_hint" %}</div>
     </article>
     <article class="card span-3">
         <div class="section-kicker">{% t "final_value" %}</div>
-        <div class="metric">{{ result.final_value|floatformat:2 }}</div>
+        <div class="metric-with-unit">
+            <div class="metric">{{ result.final_value|money_value:2 }}</div>
+            <span class="metric-unit">{{ portfolio_unit_label }}</span>
+        </div>
+        <div class="metric-note">{% t "average_final_value" %}</div>
     </article>
     <article class="card span-3">
         <div class="section-kicker">{% t "max_drawdown" %}</div>
-        <div class="metric">{{ result.max_drawdown|floatformat:4 }}</div>
+        <div class="metric-with-unit">
+            <div class="metric">{{ result.max_drawdown|percent_value:2 }}</div>
+            <span class="metric-unit">{% t "unit_percent" %}</span>
+        </div>
+        <div class="metric-note">{% t "max_drawdown_percent" %}</div>
     </article>
 
     <article class="card span-12 chart-panel">
@@ -61,17 +83,27 @@
                     </div>
                 </div>
                 <div>
-                    <h3>{% t "positions_value_chart" %}</h3>
+                    <h3>{% t "positions_relative_chart" %}</h3>
                     <div class="chart-wrap">
-                        <div class="chart-axis-label">{% t "position_value" %}</div>
+                        <div class="chart-axis-label">{% t "relative_return_axis" %}</div>
                         <canvas id="positions-chart" class="chart-canvas"></canvas>
                         <div id="positions-chart-tooltip" class="chart-tooltip"></div>
                     </div>
+                    <p class="muted" style="margin-top: 10px;">{% t "positions_relative_chart_hint" %}</p>
+                </div>
+                <div>
+                    <h3>{% t "drawdown_chart" %}</h3>
+                    <div class="chart-wrap">
+                        <div class="chart-axis-label">{% t "drawdown_axis" %}</div>
+                        <canvas id="drawdown-chart" class="chart-canvas"></canvas>
+                        <div id="drawdown-chart-tooltip" class="chart-tooltip"></div>
+                    </div>
+                    <p class="muted" style="margin-top: 10px;">{% t "drawdown_chart_hint" %}</p>
                 </div>
             </div>
             <div class="legend">
                 <span class="legend-item"><span class="legend-line"></span>{% t "portfolio_average_path" %}</span>
-                <span class="legend-item"><span class="legend-line sample"></span>{% t "position_paths" %}</span>
+                <span class="legend-item"><span class="legend-line sample"></span>{% t "position_paths_relative" %}</span>
             </div>
         {% else %}
             <div class="empty">{% t "no_chart_data" %}</div>
@@ -81,39 +113,121 @@
     {% if result.chart_data %}
         <article class="card span-3">
             <div class="section-kicker">{% t "start_value" %}</div>
-            <div class="metric">{{ result.chart_data.start_value|floatformat:2 }}</div>
+            <div class="metric-with-unit">
+                <div class="metric">{{ result.chart_data.start_value|money_value:2 }}</div>
+                <span class="metric-unit">{{ portfolio_unit_label }}</span>
+            </div>
         </article>
         <article class="card span-3">
             <div class="section-kicker">{% t "average_final_value" %}</div>
-            <div class="metric">{{ result.chart_data.average_final_value|floatformat:2 }}</div>
+            <div class="metric-with-unit">
+                <div class="metric">{{ result.chart_data.average_final_value|money_value:2 }}</div>
+                <span class="metric-unit">{{ portfolio_unit_label }}</span>
+            </div>
         </article>
         <article class="card span-3">
             <div class="section-kicker">{% t "best_final_value" %}</div>
-            <div class="metric">{{ result.chart_data.best_final_value|floatformat:2 }}</div>
+            <div class="metric-with-unit">
+                <div class="metric">{{ result.chart_data.best_final_value|money_value:2 }}</div>
+                <span class="metric-unit">{{ portfolio_unit_label }}</span>
+            </div>
         </article>
         <article class="card span-3">
             <div class="section-kicker">{% t "worst_final_value" %}</div>
-            <div class="metric">{{ result.chart_data.worst_final_value|floatformat:2 }}</div>
+            <div class="metric-with-unit">
+                <div class="metric">{{ result.chart_data.worst_final_value|money_value:2 }}</div>
+                <span class="metric-unit">{{ portfolio_unit_label }}</span>
+            </div>
         </article>
         <article class="card span-3">
             <div class="section-kicker">{% t "median_final_value" %}</div>
-            <div class="metric">{{ result.chart_data.median_final_value|floatformat:2 }}</div>
+            <div class="metric-with-unit">
+                <div class="metric">{{ result.chart_data.median_final_value|money_value:2 }}</div>
+                <span class="metric-unit">{{ portfolio_unit_label }}</span>
+            </div>
         </article>
         <article class="card span-3">
             <div class="section-kicker">{% t "probability_of_loss" %}</div>
-            <div class="metric">{{ result.chart_data.probability_of_loss_percent|floatformat:2 }}%</div>
+            <div class="metric-with-unit">
+                <div class="metric">{{ result.chart_data.probability_of_loss_percent|numeric_value:2 }}</div>
+                <span class="metric-unit">{% t "unit_percent" %}</span>
+            </div>
         </article>
         <article class="card span-3">
             <div class="section-kicker">{% t "probability_of_drawdown" %}</div>
-            <div class="metric">{{ result.chart_data.probability_of_critical_drawdown_percent|floatformat:2 }}%</div>
+            <div class="metric-with-unit">
+                <div class="metric">{{ result.chart_data.probability_of_critical_drawdown_percent|numeric_value:2 }}</div>
+                <span class="metric-unit">{% t "unit_percent" %}</span>
+            </div>
         </article>
         <article class="card span-3">
-            <div class="section-kicker">{% t "market_shock" %}</div>
-            <div class="metric">{{ result.chart_data.market_shock_percent|floatformat:2 }}%</div>
+            <div class="section-kicker">P5</div>
+            <div class="metric-with-unit">
+                <div class="metric">{{ result.chart_data.percentile_5_final_value|money_value:2 }}</div>
+                <span class="metric-unit">{{ portfolio_unit_label }}</span>
+            </div>
         </article>
         <article class="card span-3">
-            <div class="section-kicker">{% t "currency_shock" %}</div>
-            <div class="metric">{{ result.chart_data.currency_shock_percent|floatformat:2 }}%</div>
+            <div class="section-kicker">P95</div>
+            <div class="metric-with-unit">
+                <div class="metric">{{ result.chart_data.percentile_95_final_value|money_value:2 }}</div>
+                <span class="metric-unit">{{ portfolio_unit_label }}</span>
+            </div>
+        </article>
+    {% endif %}
+
+    {% if result.chart_data %}
+        <article class="card span-12">
+            <div class="card-header">
+                <div>
+                    <h2>{% t "portfolio_value_range" %}</h2>
+                </div>
+            </div>
+            <p class="muted">{% t "portfolio_value_range_subtitle" %}</p>
+            <div class="range-band">
+                <div class="range-track"></div>
+                <div class="range-points">
+                    {% for marker in distribution_markers %}
+                        <span class="range-dot" style="left: {{ marker.position }}%;"></span>
+                    {% endfor %}
+                </div>
+                <div class="range-marker-grid">
+                    {% for marker in distribution_markers %}
+                        <div class="range-marker-card">
+                            <strong>{{ marker.label }}</strong>
+                            <span>{{ marker.value }} {{ marker.unit }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="range-footer">
+                <span>{{ distribution_range.start }} {{ portfolio_unit_label }}</span>
+                <span>{{ distribution_range.end }} {{ portfolio_unit_label }}</span>
+                <span>{{ distribution_range.delta_percent }} {% t "unit_percent" %}</span>
+            </div>
+        </article>
+
+        <article class="card span-12">
+            <div class="card-header">
+                <div>
+                    <h2>{% t "risk_overview" %}</h2>
+                </div>
+            </div>
+            <p class="muted">{% t "risk_overview_subtitle" %}</p>
+            <div class="risk-grid">
+                {% for meter in risk_overview %}
+                    <div class="risk-card">
+                        <div class="meter-top">
+                            <strong>{{ meter.label }}</strong>
+                            <span>{{ meter.value|numeric_value:2 }} {% t "unit_percent" %}</span>
+                        </div>
+                        <div class="meter-track">
+                            <div class="meter-fill" style="width: {% if meter.value > 100 %}100{% else %}{{ meter.value|floatformat:2 }}{% endif %}%;"></div>
+                        </div>
+                        <div class="meter-note">{{ meter.note }}</div>
+                    </div>
+                {% endfor %}
+            </div>
         </article>
     {% endif %}
 
@@ -139,8 +253,8 @@
                         {% for metric in metrics %}
                         <tr>
                             <td>{{ metric.name }}</td>
-                            <td>{{ metric.value|floatformat:6 }}</td>
-                            <td>{{ metric.confidence_level|default:"-" }}</td>
+                            <td>{{ metric.display_value }} <span class="inline-unit">{{ metric.unit }}</span></td>
+                            <td>{% if metric.confidence_level != None %}{{ metric.confidence_level|numeric_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span>{% else %}-{% endif %}</td>
                             <td>{{ metric.calculated_at|date:"Y-m-d H:i" }}</td>
                         </tr>
                     {% endfor %}
@@ -155,7 +269,6 @@
     <article class="card span-4">
         <div class="card-header">
             <div>
-                <div class="section-kicker">{% t "run_notes" %}</div>
                 <h2>{% t "run_notes" %}</h2>
             </div>
         </div>
@@ -177,100 +290,49 @@
         </form>
     </article>
 
-    <article class="card span-12">
-        <div class="card-header">
-            <div>
-                <div class="section-kicker">{% t "scenario_settings" %}</div>
-                <h2>{% t "scenario_settings" %}</h2>
+    {% if result.chart_data.position_paths %}
+        <article class="card span-12">
+            <div class="card-header">
+                <div>
+                    <h2>{% t "position_outcomes" %}</h2>
+                </div>
             </div>
-        </div>
-        <p class="muted">{% t "scenario_settings_subtitle" %}</p>
-        <div class="detail-list" style="margin-bottom: 18px;">
-            <div class="detail-row"><span class="detail-label">{% t "trend" %}</span><strong>{% t "trend_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "volatility" %}</span><strong>{% t "volatility_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "noise_level" %}</span><strong>{% t "noise_level_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "market_shock" %}</span><strong>{% t "market_shock_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "currency_shock" %}</span><strong>{% t "currency_shock_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "systematic_risk" %}</span><strong>{% t "systematic_risk_hint" %}</strong></div>
-        </div>
-        <form method="post" action="{% url 'riskapp:run_scenario' result.scenario_id %}" class="form-card scenario-form">
-            {% csrf_token %}
-            {{ scenario_form.non_field_errors }}
-            <div class="scenario-controls">
-                <label>
-                    {% t "scenario_preset" %}
-                    {{ scenario_form.preset }}
-                    <small class="muted">{% t "scenario_preset_hint" %}</small>
-                    {{ scenario_form.preset.errors }}
-                </label>
-                <label>
-                    {% t "name" %}
-                    {{ scenario_form.name }}
-                    {{ scenario_form.name.errors }}
-                </label>
-                <label>
-                    {% t "description" %}
-                    {{ scenario_form.description }}
-                    {{ scenario_form.description.errors }}
-                </label>
-                <label>
-                    {% t "trend" %}
-                    <span class="range-control">{{ scenario_form.trend }}</span>
-                    <small class="muted">{% t "trend_hint" %}</small>
-                    {{ scenario_form.trend.errors }}
-                </label>
-                <label>
-                    {% t "volatility" %}
-                    <span class="range-control">{{ scenario_form.volatility }}</span>
-                    <small class="muted">{% t "volatility_hint" %}</small>
-                    {{ scenario_form.volatility.errors }}
-                </label>
-                <label>
-                    {% t "noise_level" %}
-                    <span class="range-control">{{ scenario_form.noise_level }}</span>
-                    <small class="muted">{% t "noise_level_hint" %}</small>
-                    {{ scenario_form.noise_level.errors }}
-                </label>
-                <label>
-                    {% t "market_shock" %}
-                    <span class="range-control">{{ scenario_form.market_shock }}</span>
-                    <small class="muted">{% t "market_shock_hint" %}</small>
-                    {{ scenario_form.market_shock.errors }}
-                </label>
-                <label>
-                    {% t "currency_shock" %}
-                    <span class="range-control">{{ scenario_form.currency_shock }}</span>
-                    <small class="muted">{% t "currency_shock_hint" %}</small>
-                    {{ scenario_form.currency_shock.errors }}
-                </label>
-                <label>
-                    {% t "systematic_risk" %}
-                    <span class="range-control">{{ scenario_form.systematic_risk }}</span>
-                    <small class="muted">{% t "systematic_risk_hint" %}</small>
-                    {{ scenario_form.systematic_risk.errors }}
-                </label>
-                <label>
-                    {% t "horizon" %}
-                    <span class="range-control">{{ scenario_form.time_horizon }}</span>
-                    <small class="muted">{% t "horizon_hint" %}</small>
-                    {{ scenario_form.time_horizon.errors }}
-                </label>
-                <label>
-                    {% t "time_step" %}
-                    <span class="range-control">{{ scenario_form.time_step }}</span>
-                    <small class="muted">{% t "time_step_hint" %}</small>
-                    {{ scenario_form.time_step.errors }}
-                </label>
-                <label>
-                    {% t "iterations" %}
-                    <span class="range-control">{{ scenario_form.iterations_count }}</span>
-                    <small class="muted">{% t "iterations_hint" %}</small>
-                    {{ scenario_form.iterations_count.errors }}
-                </label>
+            <p class="muted">{% t "position_outcomes_subtitle" %}</p>
+            <div class="table-wrap instrument-summary-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>{% t "instrument" %}</th>
+                            <th>{% t "type" %}</th>
+                            <th>{% t "currency" %}</th>
+                            <th>{% t "quantity" %}</th>
+                            <th>{% if ui_language == "ru" %}Годовой поток{% else %}Annual cash flow{% endif %}</th>
+                            <th>{% t "start_value" %}</th>
+                            <th>{% t "final_value" %}</th>
+                            <th>{% t "expected_return" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for position in result.chart_data.position_paths %}
+                            <tr>
+                                <td>
+                                    <strong>{{ position.ticker }}</strong>
+                                    <small>{{ position.name }}</small>
+                                </td>
+                                <td>{{ position.instrument_type }}</td>
+                                <td>{{ position.currency }}</td>
+                                <td>{{ position.quantity }}</td>
+                                <td>{{ position.annual_income_yield_percent|numeric_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
+                                <td>{{ position.start_value|money_value:2 }} <span class="inline-unit">{{ position.base_currency }}</span></td>
+                                <td>{{ position.final_value|money_value:2 }} <span class="inline-unit">{{ position.base_currency }}</span></td>
+                                <td>{{ position.return_percent|numeric_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
-            <button type="submit" class="button button-primary">{% t "apply_and_run_scenario" %}</button>
-        </form>
-    </article>
+        </article>
+    {% endif %}
 </section>
 
 {% if result.chart_data %}
@@ -279,6 +341,10 @@
         const payload = JSON.parse(document.getElementById("simulation-chart-data").textContent);
         const labels = payload.labels || [];
         const palette = ["#b5462d", "#2d5f88", "#2f7d55", "#7b4fa3", "#c5872d", "#2b7f7f", "#8b3f52", "#4f6742"];
+        const dayUnit = "{% t "unit_days" %}";
+        const moneyUnit = "{{ portfolio_unit_label }}";
+        const percentUnit = "{% t "unit_percent" %}";
+        const indexedBaseLabel = "{% t "positions_relative_base_label" %}";
 
         const resizeCanvas = (canvas, context) => {
             const ratio = window.devicePixelRatio || 1;
@@ -293,7 +359,7 @@
             minimumFractionDigits: 2,
         });
 
-        const drawChart = ({ canvasId, tooltipId, series }) => {
+        const drawChart = ({ canvasId, tooltipId, series, valueFormatter, tooltipFormatter, axisMode = "balanced" }) => {
             const canvas = document.getElementById(canvasId);
             const tooltip = document.getElementById(tooltipId);
             const context = canvas.getContext("2d");
@@ -303,13 +369,36 @@
                 return;
             }
 
-            const padding = { top: 24, right: 24, bottom: 42, left: 90 };
+            const padding = { top: 24, right: 24, bottom: 42, left: 102 };
             const allValues = paths.flat();
             const rawMin = Math.min(...allValues);
             const rawMax = Math.max(...allValues);
             const rangePadding = Math.max((rawMax - rawMin) * 0.08, 1);
-            const minValue = Math.max(0, rawMin - rangePadding);
-            const maxValue = rawMax + rangePadding;
+            let minValue;
+            let maxValue;
+
+            if (axisMode === "positive_zero" && rawMin >= 0) {
+                minValue = 0;
+                maxValue = rawMax + rangePadding;
+            } else if (axisMode === "negative_zero" && rawMax <= 0) {
+                minValue = rawMin - rangePadding;
+                maxValue = 0;
+            } else if (axisMode === "zero_if_one_sided") {
+                if (rawMax <= 0) {
+                    minValue = rawMin - rangePadding;
+                    maxValue = 0;
+                } else if (rawMin >= 0) {
+                    minValue = 0;
+                    maxValue = rawMax + rangePadding;
+                } else {
+                    minValue = rawMin - rangePadding;
+                    maxValue = rawMax + rangePadding;
+                }
+            } else {
+                minValue = rawMin - rangePadding;
+                maxValue = rawMax + rangePadding;
+            }
+
             const valueRange = Math.max(maxValue - minValue, 1);
 
             const getPoint = (path, index, rect) => {
@@ -335,13 +424,13 @@
                     context.moveTo(padding.left, y);
                     context.lineTo(rect.width - padding.right, y);
                     context.stroke();
-                    context.fillText(formatMoney(value), 10, y + 4);
+                    context.fillText(valueFormatter(value), 10, y + 4);
                 }
 
                 const startLabel = labels[0] ?? 0;
                 const endLabel = labels[labels.length - 1] ?? series[0].values.length - 1;
-                context.fillText(`${startLabel} d`, padding.left, rect.height - 14);
-                context.fillText(`${endLabel} d`, rect.width - padding.right - 46, rect.height - 14);
+                context.fillText(`${startLabel} ${dayUnit}`, padding.left, rect.height - 14);
+                context.fillText(`${endLabel} ${dayUnit}`, rect.width - padding.right - 60, rect.height - 14);
             };
 
             const drawSeries = () => {
@@ -394,7 +483,7 @@
                 context.arc(nearest.point.x, nearest.point.y, 5, 0, Math.PI * 2);
                 context.fill();
 
-                tooltip.innerHTML = `<strong>${nearest.item.label}</strong><br>${formatMoney(nearest.value)}<br>${labels[index] ?? index} d`;
+                tooltip.innerHTML = `<strong>${nearest.item.label}</strong><br>${tooltipFormatter(nearest.value)}<br>${labels[index] ?? index} ${dayUnit}`;
                 tooltip.style.left = `${nearest.point.x}px`;
                 tooltip.style.top = `${nearest.point.y}px`;
                 tooltip.style.opacity = "1";
@@ -422,67 +511,62 @@
                 color: palette[0],
                 width: 4,
             }],
+            valueFormatter: (value) => formatMoney(value),
+            tooltipFormatter: (value) => `${formatMoney(value)} ${moneyUnit}`,
+            axisMode: "balanced",
         });
+
+        const normalizeSeries = (values) => {
+            if (!values || !values.length) {
+                return [];
+            }
+            const base = values[0] || 1;
+            if (base === 0) {
+                return values.map(() => 100);
+            }
+            return values.map((value) => ((value / base) - 1) * 100);
+        };
 
         drawChart({
             canvasId: "positions-chart",
             tooltipId: "positions-chart-tooltip",
             series: (payload.position_paths || []).map((item, index) => ({
                 label: item.ticker,
-                values: item.values || [],
+                values: normalizeSeries(item.values || []),
                 color: palette[(index + 1) % palette.length],
                 width: 3,
             })),
+            valueFormatter: (value) => `${Number(value).toLocaleString(undefined, {
+                maximumFractionDigits: 1,
+                minimumFractionDigits: 1,
+            })}${percentUnit}`,
+            tooltipFormatter: (value) => `${Number(value).toLocaleString(undefined, {
+                maximumFractionDigits: 2,
+                minimumFractionDigits: 2,
+            })} ${percentUnit} - ${indexedBaseLabel}`,
+            axisMode: "zero_if_one_sided",
+        });
+
+        drawChart({
+            canvasId: "drawdown-chart",
+            tooltipId: "drawdown-chart-tooltip",
+            series: [{
+                label: "{% t "max_drawdown" %}",
+                values: payload.average_drawdown_path_percent || [],
+                color: palette[6],
+                width: 3,
+            }],
+            valueFormatter: (value) => `${Number(value).toLocaleString(undefined, {
+                maximumFractionDigits: 1,
+                minimumFractionDigits: 1,
+            })}${percentUnit}`,
+            tooltipFormatter: (value) => `${Number(value).toLocaleString(undefined, {
+                maximumFractionDigits: 2,
+                minimumFractionDigits: 2,
+            })} ${percentUnit}`,
+            axisMode: "negative_zero",
         });
     })();
 </script>
 {% endif %}
-
-<script>
-    (() => {
-        const presetValues = {
-            base: { trend: "0.050000", volatility: "0.150000", noise_level: "0.020000", market_shock: "0.000000", currency_shock: "0.000000", systematic_risk: "0.6500", time_horizon: "365", time_step: "1.0000", iterations_count: "500" },
-            optimistic: { trend: "0.120000", volatility: "0.140000", noise_level: "0.018000", market_shock: "0.040000", currency_shock: "0.030000", systematic_risk: "0.6000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
-            pessimistic: { trend: "-0.040000", volatility: "0.220000", noise_level: "0.030000", market_shock: "-0.050000", currency_shock: "-0.040000", systematic_risk: "0.7000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
-            stress: { trend: "-0.080000", volatility: "0.350000", noise_level: "0.050000", market_shock: "-0.120000", currency_shock: "-0.100000", systematic_risk: "0.8500", time_horizon: "240", time_step: "1.0000", iterations_count: "1000" },
-            crisis: { trend: "-0.180000", volatility: "0.500000", noise_level: "0.080000", market_shock: "-0.200000", currency_shock: "-0.180000", systematic_risk: "0.9500", time_horizon: "180", time_step: "1.0000", iterations_count: "1200" }
-        };
-
-        document.querySelectorAll(".scenario-form input[data-slider-min]").forEach((numberInput) => {
-            const slider = document.createElement("input");
-            slider.type = "range";
-            slider.min = numberInput.dataset.sliderMin;
-            slider.max = numberInput.dataset.sliderMax;
-            slider.step = numberInput.dataset.sliderStep;
-            slider.value = numberInput.value || slider.min;
-            slider.setAttribute("aria-hidden", "true");
-            numberInput.parentElement.insertBefore(slider, numberInput);
-
-            slider.addEventListener("input", () => {
-                numberInput.value = slider.value;
-            });
-            numberInput.addEventListener("input", () => {
-                slider.value = numberInput.value;
-            });
-        });
-
-        const presetField = document.getElementById("id_preset");
-        if (presetField) {
-            presetField.addEventListener("change", () => {
-                const values = presetValues[presetField.value];
-                if (!values) {
-                    return;
-                }
-                Object.entries(values).forEach(([name, value]) => {
-                    const input = document.getElementById(`id_${name}`);
-                    if (!input) {
-                        return;
-                    }
-                    input.value = value;
-                    input.dispatchEvent(new Event("input", { bubbles: true }));
-                });
-            });
-        }
-    })();
-</script>
 {% endblock %}

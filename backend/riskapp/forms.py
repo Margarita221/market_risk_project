@@ -11,52 +11,175 @@ from django.contrib.auth.forms import (
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 from riskapp.i18n import normalize_language, translate
-from riskapp.models import Instrument, Portfolio, PortfolioPosition, Scenario
+from riskapp.models import Instrument, Portfolio, PortfolioPosition, Scenario, SimulationResult, TradeOperation
+
+
+def build_sector_choices(language="ru", include_all=False, empty_label="---------"):
+    values = list(Instrument.objects.exclude(sector="").order_by("sector").values_list("sector", flat=True).distinct())
+    for sector in Instrument.known_sectors():
+        if sector not in values:
+            values.append(sector)
+    values = sorted(value for value in values if value)
+    choices = [(value, value) for value in values]
+    if include_all:
+        return [("", translate("all_sectors", language))] + choices
+    return [("", empty_label)] + choices
+
+
+def validate_time_step_vs_horizon(cleaned_data, language):
+    time_horizon = cleaned_data.get("time_horizon")
+    time_step = cleaned_data.get("time_step")
+    if time_horizon is None or time_step is None:
+        return
+    if Decimal(str(time_step)) > Decimal(str(time_horizon)):
+        raise forms.ValidationError({
+            "time_step": translate("error_time_step_gt_horizon", language),
+        })
+
+
+DISPLAY_DECIMALS = {
+    "trend": 2,
+    "volatility": 2,
+    "noise_level": 2,
+    "market_shock": 2,
+    "currency_shock": 2,
+    "inflation_shock": 2,
+    "sector_shock": 2,
+    "interest_rate_shock": 2,
+    "systematic_risk": 2,
+    "mean_reversion_strength": 2,
+    "time_step": 0,
+}
+
+SCENARIO_NUMERIC_LIMITS = {
+    "trend": (Decimal("-0.30"), Decimal("0.30")),
+    "volatility": (Decimal("0.00"), Decimal("0.60")),
+    "noise_level": (Decimal("0.00"), Decimal("0.15")),
+    "market_shock": (Decimal("-0.25"), Decimal("0.25")),
+    "currency_shock": (Decimal("-0.20"), Decimal("0.20")),
+    "inflation_shock": (Decimal("-0.05"), Decimal("0.25")),
+    "sector_shock": (Decimal("-0.20"), Decimal("0.20")),
+    "interest_rate_shock": (Decimal("-0.10"), Decimal("0.10")),
+    "systematic_risk": (Decimal("0.00"), Decimal("1.00")),
+    "mean_reversion_strength": (Decimal("0.00"), Decimal("0.50")),
+}
+
+
+def format_decimal_for_display(value, decimals):
+    if value in (None, ""):
+        return value
+    quantizer = Decimal("1") if decimals == 0 else Decimal(f"1.{'0' * decimals}")
+    return str(Decimal(str(value)).quantize(quantizer)).replace(",", ".")
+
+
+def apply_scenario_display_precision(form):
+    if form.is_bound:
+        return
+    for field_name, decimals in DISPLAY_DECIMALS.items():
+        if field_name not in form.fields:
+            continue
+        raw_value = form.initial.get(field_name)
+        if raw_value in (None, ""):
+            continue
+        form.initial[field_name] = format_decimal_for_display(raw_value, decimals)
+
+
+def apply_scenario_numeric_limits(form):
+    for field_name, limits in SCENARIO_NUMERIC_LIMITS.items():
+        if field_name not in form.fields:
+            continue
+        field = form.fields[field_name]
+        field.min_value = limits[0]
+        field.max_value = limits[1]
+
+
+def validate_scenario_numeric_limits(cleaned_data, language):
+    errors = {}
+    for field_name, (min_value, max_value) in SCENARIO_NUMERIC_LIMITS.items():
+        value = cleaned_data.get(field_name)
+        if value in (None, ""):
+            continue
+        decimal_value = Decimal(str(value))
+        if decimal_value < min_value or decimal_value > max_value:
+            errors[field_name] = translate(
+                "error_value_between",
+                language,
+                minimum=format_decimal_for_display(min_value, DISPLAY_DECIMALS.get(field_name, 2)),
+                maximum=format_decimal_for_display(max_value, DISPLAY_DECIMALS.get(field_name, 2)),
+            )
+    if errors:
+        raise forms.ValidationError(errors)
 
 SCENARIO_FIELD_WIDGETS = {
     "description": forms.Textarea(attrs={"rows": 3}),
     "preset": forms.Select(),
     "trend": forms.NumberInput(attrs={
-        "step": "0.001",
-        "min": "-0.5",
-        "max": "0.5",
-        "data-slider-min": "-0.5",
-        "data-slider-max": "0.5",
-        "data-slider-step": "0.001",
+        "step": "0.01",
+        "min": "-0.3",
+        "max": "0.3",
+        "data-slider-min": "-0.3",
+        "data-slider-max": "0.3",
+        "data-slider-step": "0.01",
     }),
     "volatility": forms.NumberInput(attrs={
-        "step": "0.001",
+        "step": "0.01",
         "min": "0",
-        "max": "1",
+        "max": "0.6",
         "data-slider-min": "0",
-        "data-slider-max": "1",
-        "data-slider-step": "0.001",
+        "data-slider-max": "0.6",
+        "data-slider-step": "0.01",
     }),
     "noise_level": forms.NumberInput(attrs={
-        "step": "0.001",
+        "step": "0.01",
         "min": "0",
-        "max": "0.5",
+        "max": "0.15",
         "data-slider-min": "0",
-        "data-slider-max": "0.5",
-        "data-slider-step": "0.001",
+        "data-slider-max": "0.15",
+        "data-slider-step": "0.01",
     }),
     "market_shock": forms.NumberInput(attrs={
-        "step": "0.001",
-        "min": "-0.8",
-        "max": "0.8",
-        "data-slider-min": "-0.8",
-        "data-slider-max": "0.8",
-        "data-slider-step": "0.001",
+        "step": "0.01",
+        "min": "-0.25",
+        "max": "0.25",
+        "data-slider-min": "-0.25",
+        "data-slider-max": "0.25",
+        "data-slider-step": "0.01",
     }),
     "currency_shock": forms.NumberInput(attrs={
-        "step": "0.001",
-        "min": "-0.8",
-        "max": "0.8",
-        "data-slider-min": "-0.8",
-        "data-slider-max": "0.8",
-        "data-slider-step": "0.001",
+        "step": "0.01",
+        "min": "-0.2",
+        "max": "0.2",
+        "data-slider-min": "-0.2",
+        "data-slider-max": "0.2",
+        "data-slider-step": "0.01",
+    }),
+    "inflation_shock": forms.NumberInput(attrs={
+        "step": "0.01",
+        "min": "-0.05",
+        "max": "0.25",
+        "data-slider-min": "-0.05",
+        "data-slider-max": "0.25",
+        "data-slider-step": "0.01",
+    }),
+    "sector_target": forms.Select(),
+    "sector_shock": forms.NumberInput(attrs={
+        "step": "0.01",
+        "min": "-0.2",
+        "max": "0.2",
+        "data-slider-min": "-0.2",
+        "data-slider-max": "0.2",
+        "data-slider-step": "0.01",
+    }),
+    "interest_rate_shock": forms.NumberInput(attrs={
+        "step": "0.01",
+        "min": "-0.1",
+        "max": "0.1",
+        "data-slider-min": "-0.1",
+        "data-slider-max": "0.1",
+        "data-slider-step": "0.01",
     }),
     "systematic_risk": forms.NumberInput(attrs={
         "step": "0.01",
@@ -64,6 +187,14 @@ SCENARIO_FIELD_WIDGETS = {
         "max": "1",
         "data-slider-min": "0",
         "data-slider-max": "1",
+        "data-slider-step": "0.01",
+    }),
+    "mean_reversion_strength": forms.NumberInput(attrs={
+        "step": "0.01",
+        "min": "0",
+        "max": "0.5",
+        "data-slider-min": "0",
+        "data-slider-max": "0.5",
         "data-slider-step": "0.01",
     }),
     "time_horizon": forms.NumberInput(attrs={
@@ -94,12 +225,17 @@ SCENARIO_FIELD_WIDGETS = {
 
 SCENARIO_PRESETS = {
     Scenario.PRESET_BASE: {
-        "trend": "0.050000",
-        "volatility": "0.150000",
-        "noise_level": "0.020000",
+        "trend": "0.060000",
+        "volatility": "0.120000",
+        "noise_level": "0.015000",
         "market_shock": "0.000000",
         "currency_shock": "0.000000",
-        "systematic_risk": "0.6500",
+        "inflation_shock": "0.050000",
+        "sector_target": "",
+        "sector_shock": "0.000000",
+        "interest_rate_shock": "0.000000",
+        "systematic_risk": "0.5500",
+        "mean_reversion_strength": "0.1200",
         "time_horizon": 365,
         "time_step": "1.0000",
         "iterations_count": 500,
@@ -107,46 +243,66 @@ SCENARIO_PRESETS = {
     Scenario.PRESET_OPTIMISTIC: {
         "trend": "0.120000",
         "volatility": "0.140000",
-        "noise_level": "0.018000",
-        "market_shock": "0.040000",
-        "currency_shock": "0.030000",
-        "systematic_risk": "0.6000",
+        "noise_level": "0.015000",
+        "market_shock": "0.030000",
+        "currency_shock": "0.020000",
+        "inflation_shock": "0.030000",
+        "sector_target": "Equities",
+        "sector_shock": "0.020000",
+        "interest_rate_shock": "-0.010000",
+        "systematic_risk": "0.5000",
+        "mean_reversion_strength": "0.1000",
         "time_horizon": 365,
         "time_step": "1.0000",
         "iterations_count": 700,
     },
     Scenario.PRESET_PESSIMISTIC: {
-        "trend": "-0.040000",
-        "volatility": "0.220000",
-        "noise_level": "0.030000",
-        "market_shock": "-0.050000",
-        "currency_shock": "-0.040000",
-        "systematic_risk": "0.7000",
+        "trend": "-0.030000",
+        "volatility": "0.180000",
+        "noise_level": "0.020000",
+        "market_shock": "-0.040000",
+        "currency_shock": "-0.030000",
+        "inflation_shock": "0.070000",
+        "sector_target": "Equities",
+        "sector_shock": "-0.040000",
+        "interest_rate_shock": "0.015000",
+        "systematic_risk": "0.6000",
+        "mean_reversion_strength": "0.1500",
         "time_horizon": 365,
         "time_step": "1.0000",
         "iterations_count": 700,
     },
     Scenario.PRESET_STRESS: {
-        "trend": "-0.080000",
-        "volatility": "0.350000",
-        "noise_level": "0.050000",
-        "market_shock": "-0.120000",
-        "currency_shock": "-0.100000",
-        "systematic_risk": "0.8500",
+        "trend": "-0.070000",
+        "volatility": "0.280000",
+        "noise_level": "0.040000",
+        "market_shock": "-0.080000",
+        "currency_shock": "-0.060000",
+        "inflation_shock": "0.100000",
+        "sector_target": "Equities",
+        "sector_shock": "-0.070000",
+        "interest_rate_shock": "0.030000",
+        "systematic_risk": "0.7500",
+        "mean_reversion_strength": "0.1800",
         "time_horizon": 240,
         "time_step": "1.0000",
-        "iterations_count": 1000,
+        "iterations_count": 900,
     },
     Scenario.PRESET_CRISIS: {
-        "trend": "-0.180000",
-        "volatility": "0.500000",
-        "noise_level": "0.080000",
-        "market_shock": "-0.200000",
-        "currency_shock": "-0.180000",
-        "systematic_risk": "0.9500",
+        "trend": "-0.120000",
+        "volatility": "0.400000",
+        "noise_level": "0.060000",
+        "market_shock": "-0.150000",
+        "currency_shock": "-0.100000",
+        "inflation_shock": "0.140000",
+        "sector_target": "Equities",
+        "sector_shock": "-0.120000",
+        "interest_rate_shock": "0.050000",
+        "systematic_risk": "0.8800",
+        "mean_reversion_strength": "0.2200",
         "time_horizon": 180,
         "time_step": "1.0000",
-        "iterations_count": 1200,
+        "iterations_count": 1000,
     },
 }
 
@@ -323,7 +479,7 @@ class LocalizedSetPasswordForm(SetPasswordForm):
 class PortfolioForm(forms.ModelForm):
     class Meta:
         model = Portfolio
-        fields = ["name", "description"]
+        fields = ["name", "description", "base_currency"]
         widgets = {
             "description": forms.Textarea(attrs={"rows": 4}),
         }
@@ -350,19 +506,216 @@ class PortfolioPositionQuantityForm(forms.ModelForm):
         self.fields["quantity"].min_value = 1
 
 
+class TradeOperationForm(forms.ModelForm):
+    def __init__(self, *args, portfolio=None, user=None, language="ru", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.portfolio = portfolio
+        self.user = user
+        self.language = language
+
+        all_instruments = Instrument.objects.order_by("ticker")
+        owned_instruments = all_instruments
+        if portfolio is not None:
+            owned_ids = (
+                PortfolioPosition.objects.filter(portfolio=portfolio)
+                .values_list("instrument_id", flat=True)
+            )
+            owned_instruments = all_instruments.filter(id__in=owned_ids)
+
+        self.fields["instrument"].queryset = all_instruments
+        self.fields["quantity"].min_value = 1
+        self.fields["executed_at"].initial = timezone.now
+        if language == "ru":
+            self.fields["operation_type"].choices = [
+                (TradeOperation.TYPE_BUY, "Покупка"),
+                (TradeOperation.TYPE_SELL, "Продажа"),
+            ]
+        else:
+            self.fields["operation_type"].choices = TradeOperation.TYPE_CHOICES
+
+        if language == "ru":
+            self.fields["operation_type"].label = "Тип операции"
+            self.fields["instrument"].label = "Инструмент"
+            self.fields["quantity"].label = "Количество"
+            self.fields["executed_at"].label = "Дата и время сделки"
+            self.fields["comment"].label = "Комментарий"
+            self.fields["comment"].help_text = "Необязательно. Можно указать причину сделки или заметку."
+            self.fields["executed_at"].help_text = "Если оставить текущее значение, сделка будет считаться совершенной прямо сейчас."
+        else:
+            self.fields["operation_type"].label = "Operation type"
+            self.fields["instrument"].label = "Instrument"
+            self.fields["quantity"].label = "Quantity"
+            self.fields["executed_at"].label = "Execution time"
+            self.fields["comment"].label = "Comment"
+            self.fields["comment"].help_text = "Optional. Use it for a trade note or rationale."
+            self.fields["executed_at"].help_text = "Leave the current value to record the trade as happening now."
+
+        if language == "ru":
+            self.fields["operation_type"].choices = [
+                (TradeOperation.TYPE_BUY, "Покупка"),
+                (TradeOperation.TYPE_SELL, "Продажа"),
+            ]
+            self.fields["operation_type"].label = "Тип сделки"
+            self.fields["instrument"].label = "Инструмент"
+            self.fields["quantity"].label = "Количество"
+            self.fields["executed_at"].label = "Дата и время сделки"
+            self.fields["comment"].label = "Комментарий"
+            self.fields["comment"].help_text = "Необязательно. Можно оставить заметку к сделке или кратко описать её цель."
+            self.fields["executed_at"].help_text = "Если оставить текущее значение, сделка будет считаться совершённой прямо сейчас."
+
+        operation_type = None
+        if self.is_bound:
+            operation_type = self.data.get(self.add_prefix("operation_type"))
+        elif self.initial.get("operation_type"):
+            operation_type = self.initial.get("operation_type")
+
+        if operation_type == TradeOperation.TYPE_SELL and portfolio is not None:
+            self.fields["instrument"].queryset = owned_instruments
+
+    class Meta:
+        model = TradeOperation
+        fields = [
+            "operation_type",
+            "instrument",
+            "quantity",
+            "executed_at",
+            "comment",
+        ]
+        widgets = {
+            "comment": forms.Textarea(attrs={"rows": 3}),
+            "executed_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        operation_type = cleaned_data.get("operation_type")
+        instrument = cleaned_data.get("instrument")
+        quantity = cleaned_data.get("quantity")
+
+        if (
+            self.portfolio is not None
+            and operation_type == TradeOperation.TYPE_SELL
+            and instrument is not None
+            and quantity
+        ):
+            position = PortfolioPosition.objects.filter(
+                portfolio=self.portfolio,
+                instrument=instrument,
+            ).first()
+            if position is None:
+                message = "В портфеле нет этой позиции для продажи." if self.language == "ru" else "This position is not available for selling in the portfolio."
+                raise forms.ValidationError({"instrument": message})
+            if quantity > position.quantity:
+                message = (
+                    f"Нельзя продать больше {position.quantity} шт."
+                    if self.language == "ru"
+                    else f"You cannot sell more than {position.quantity} units."
+                )
+                raise forms.ValidationError({"quantity": message})
+        return cleaned_data
+
+    def clean(self):
+        cleaned_data = super().clean()
+        operation_type = cleaned_data.get("operation_type")
+        instrument = cleaned_data.get("instrument")
+        quantity = cleaned_data.get("quantity")
+
+        if (
+            self.portfolio is not None
+            and operation_type == TradeOperation.TYPE_SELL
+            and instrument is not None
+            and quantity
+        ):
+            position = PortfolioPosition.objects.filter(
+                portfolio=self.portfolio,
+                instrument=instrument,
+            ).first()
+            if position is None:
+                message = (
+                    "В портфеле нет этой позиции для продажи."
+                    if self.language == "ru"
+                    else "This position is not available for selling in the portfolio."
+                )
+                raise forms.ValidationError({"instrument": message})
+            if quantity > position.quantity:
+                message = (
+                    f"Нельзя продать больше {position.quantity} шт."
+                    if self.language == "ru"
+                    else f"You cannot sell more than {position.quantity} units."
+                )
+                raise forms.ValidationError({"quantity": message})
+        return cleaned_data
+
+
+class StrategyComparisonForm(forms.Form):
+    portfolio = forms.ModelChoiceField(queryset=Portfolio.objects.none(), required=True)
+
+    def __init__(self, *args, portfolios_queryset=None, language="ru", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.language = language
+        queryset = (portfolios_queryset if portfolios_queryset is not None else Portfolio.objects.none()).order_by("name")
+        self.fields["portfolio"].queryset = queryset
+        if language == "ru":
+            self.fields["portfolio"].label = "Портфель"
+        else:
+            self.fields["portfolio"].label = "Portfolio"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        portfolio = cleaned_data.get("portfolio")
+        if portfolio is None:
+            return cleaned_data
+        results_count = SimulationResult.objects.filter(scenario__portfolio=portfolio).count()
+        if results_count < 2:
+            message = (
+                "Для сравнения в выбранном портфеле нужно как минимум два результата моделирования."
+                if self.language == "ru"
+                else "The selected portfolio needs at least two simulation results to compare."
+            )
+            raise forms.ValidationError({"portfolio": message})
+        return cleaned_data
+
+
 class InstrumentSearchForm(forms.Form):
     query = forms.CharField(required=False)
     instrument_type = forms.CharField(required=False)
+    sector = forms.ChoiceField(required=False, choices=())
     currency = forms.CharField(required=False)
     price_min = forms.DecimalField(required=False, min_value=0, decimal_places=2, max_digits=15)
     price_max = forms.DecimalField(required=False, min_value=0, decimal_places=2, max_digits=15)
     portfolio = forms.IntegerField(required=False, min_value=1)
 
+    def __init__(self, *args, language="ru", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["sector"].choices = build_sector_choices(language=language, include_all=True)
+
 
 class ScenarioForm(forms.ModelForm):
+    sector_target = forms.ChoiceField(required=False, choices=())
+
+    def _configure_sector_choices(self):
+        self.fields["sector_target"].choices = build_sector_choices(
+            language=self.language,
+            empty_label=translate("no_sector_shock", self.language),
+        )
+
     def __init__(self, *args, **kwargs):
+        self.language = kwargs.pop("language", "ru")
         super().__init__(*args, **kwargs)
-        for field_name in ("preset", "market_shock", "currency_shock", "systematic_risk"):
+        self._configure_sector_choices()
+        apply_scenario_numeric_limits(self)
+        apply_scenario_display_precision(self)
+        for field_name in (
+            "preset",
+            "market_shock",
+            "currency_shock",
+            "inflation_shock",
+            "sector_target",
+            "sector_shock",
+            "interest_rate_shock",
+            "systematic_risk",
+            "mean_reversion_strength",
+        ):
             self.fields[field_name].required = False
         self.fields["preset"].initial = self.initial.get("preset", Scenario.PRESET_BASE)
 
@@ -377,7 +730,12 @@ class ScenarioForm(forms.ModelForm):
             "noise_level",
             "market_shock",
             "currency_shock",
+            "inflation_shock",
+            "sector_target",
+            "sector_shock",
+            "interest_rate_shock",
             "systematic_risk",
+            "mean_reversion_strength",
             "time_horizon",
             "time_step",
             "iterations_count",
@@ -389,24 +747,47 @@ class ScenarioForm(forms.ModelForm):
         preset = cleaned_data.get("preset") or Scenario.PRESET_BASE
         cleaned_data["preset"] = preset
         self.cleaned_data["preset"] = preset
-        if preset and preset != Scenario.PRESET_CUSTOM:
-            preset_values = SCENARIO_PRESETS.get(preset, {})
-            for field_name, value in preset_values.items():
-                cleaned_data[field_name] = value
-                self.cleaned_data[field_name] = value
-        else:
-            cleaned_data["market_shock"] = cleaned_data.get("market_shock") or Decimal("0")
-            cleaned_data["currency_shock"] = cleaned_data.get("currency_shock") or Decimal("0")
-            cleaned_data["systematic_risk"] = cleaned_data.get("systematic_risk") or Decimal("0.6500")
+        cleaned_data["market_shock"] = cleaned_data.get("market_shock") or Decimal("0")
+        cleaned_data["currency_shock"] = cleaned_data.get("currency_shock") or Decimal("0")
+        cleaned_data["inflation_shock"] = cleaned_data.get("inflation_shock") or Decimal("0")
+        cleaned_data["sector_target"] = cleaned_data.get("sector_target") or ""
+        cleaned_data["sector_shock"] = cleaned_data.get("sector_shock") or Decimal("0")
+        cleaned_data["interest_rate_shock"] = cleaned_data.get("interest_rate_shock") or Decimal("0")
+        cleaned_data["systematic_risk"] = cleaned_data.get("systematic_risk") or Decimal("0.6500")
+        cleaned_data["mean_reversion_strength"] = cleaned_data.get("mean_reversion_strength") or Decimal("0.1500")
+        validate_scenario_numeric_limits(cleaned_data, self.language)
+        validate_time_step_vs_horizon(cleaned_data, self.language)
         return cleaned_data
 
 
 class ScenarioManagementForm(forms.ModelForm):
+    sector_target = forms.ChoiceField(required=False, choices=())
+
+    def _configure_sector_choices(self):
+        self.fields["sector_target"].choices = build_sector_choices(
+            language=self.language,
+            empty_label=translate("no_sector_shock", self.language),
+        )
+
     def __init__(self, *args, portfolios_queryset=None, **kwargs):
+        self.language = kwargs.pop("language", "ru")
         super().__init__(*args, **kwargs)
+        self._configure_sector_choices()
+        apply_scenario_numeric_limits(self)
+        apply_scenario_display_precision(self)
         if portfolios_queryset is not None:
             self.fields["portfolio"].queryset = portfolios_queryset.order_by("name")
-        for field_name in ("preset", "market_shock", "currency_shock", "systematic_risk"):
+        for field_name in (
+            "preset",
+            "market_shock",
+            "currency_shock",
+            "inflation_shock",
+            "sector_target",
+            "sector_shock",
+            "interest_rate_shock",
+            "systematic_risk",
+            "mean_reversion_strength",
+        ):
             self.fields[field_name].required = False
         self.fields["preset"].initial = self.initial.get("preset", Scenario.PRESET_BASE)
 
@@ -422,7 +803,12 @@ class ScenarioManagementForm(forms.ModelForm):
             "noise_level",
             "market_shock",
             "currency_shock",
+            "inflation_shock",
+            "sector_target",
+            "sector_shock",
+            "interest_rate_shock",
             "systematic_risk",
+            "mean_reversion_strength",
             "time_horizon",
             "time_step",
             "iterations_count",
@@ -434,13 +820,14 @@ class ScenarioManagementForm(forms.ModelForm):
         preset = cleaned_data.get("preset") or Scenario.PRESET_BASE
         cleaned_data["preset"] = preset
         self.cleaned_data["preset"] = preset
-        if preset and preset != Scenario.PRESET_CUSTOM:
-            preset_values = SCENARIO_PRESETS.get(preset, {})
-            for field_name, value in preset_values.items():
-                cleaned_data[field_name] = value
-                self.cleaned_data[field_name] = value
-        else:
-            cleaned_data["market_shock"] = cleaned_data.get("market_shock") or Decimal("0")
-            cleaned_data["currency_shock"] = cleaned_data.get("currency_shock") or Decimal("0")
-            cleaned_data["systematic_risk"] = cleaned_data.get("systematic_risk") or Decimal("0.6500")
+        cleaned_data["market_shock"] = cleaned_data.get("market_shock") or Decimal("0")
+        cleaned_data["currency_shock"] = cleaned_data.get("currency_shock") or Decimal("0")
+        cleaned_data["inflation_shock"] = cleaned_data.get("inflation_shock") or Decimal("0")
+        cleaned_data["sector_target"] = cleaned_data.get("sector_target") or ""
+        cleaned_data["sector_shock"] = cleaned_data.get("sector_shock") or Decimal("0")
+        cleaned_data["interest_rate_shock"] = cleaned_data.get("interest_rate_shock") or Decimal("0")
+        cleaned_data["systematic_risk"] = cleaned_data.get("systematic_risk") or Decimal("0.6500")
+        cleaned_data["mean_reversion_strength"] = cleaned_data.get("mean_reversion_strength") or Decimal("0.1500")
+        validate_scenario_numeric_limits(cleaned_data, self.language)
+        validate_time_step_vs_horizon(cleaned_data, self.language)
         return cleaned_data

@@ -18,18 +18,63 @@
     </div>
 </section>
 
+{% if calibration_summary %}
 <section class="card">
-        <div class="detail-list" style="margin-bottom: 18px;">
-            <div class="detail-row"><span class="detail-label">{% t "trend" %}</span><strong>{% t "trend_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "volatility" %}</span><strong>{% t "volatility_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "noise_level" %}</span><strong>{% t "noise_level_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "market_shock" %}</span><strong>{% t "market_shock_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "currency_shock" %}</span><strong>{% t "currency_shock_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "systematic_risk" %}</span><strong>{% t "systematic_risk_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "horizon" %}</span><strong>{% t "horizon_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "time_step" %}</span><strong>{% t "time_step_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "iterations" %}</span><strong>{% t "iterations_hint" %}</strong></div>
+    <div class="card-header">
+        <div>
+            <div class="section-kicker">{% if ui_language == "ru" %}Историческая калибровка{% else %}Historical calibration{% endif %}</div>
+            <h2>{% if ui_language == "ru" %}Подсказки по реальной истории цен{% else %}Suggestions from real price history{% endif %}</h2>
+        </div>
     </div>
+    <p class="muted">
+        {% if ui_language == "ru" %}
+            Параметры ниже подставлены по истории цен выбранного портфеля. Мы использовали окно {{ calibration_summary.lookback_days }} дн.,
+            {{ calibration_summary.instruments_used }} инструмент(ов) и {{ calibration_summary.observations_used }} наблюдений доходности.
+        {% else %}
+            The values below were calibrated from the selected portfolio price history. The calculation used a {{ calibration_summary.lookback_days }} day window,
+            {{ calibration_summary.instruments_used }} instrument(s), and {{ calibration_summary.observations_used }} return observations.
+        {% endif %}
+    </p>
+    <div class="summary-grid">
+        <div class="summary-card">
+            <div class="section-kicker">{% t "trend" %}</div>
+            <strong>{{ calibration_summary.annual_trend|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></strong>
+            <div class="metric-note">{% if ui_language == "ru" %}Годовая историческая доходность портфеля.{% else %}Annualized historical portfolio return.{% endif %}</div>
+        </div>
+        <div class="summary-card">
+            <div class="section-kicker">{% t "volatility" %}</div>
+            <strong>{{ calibration_summary.annual_volatility|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></strong>
+            <div class="metric-note">{% if ui_language == "ru" %}Годовой разброс исторических доходностей.{% else %}Annualized spread of historical returns.{% endif %}</div>
+        </div>
+        <div class="summary-card">
+            <div class="section-kicker">{% t "noise_level" %}</div>
+            <strong>{{ calibration_summary.noise_level|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></strong>
+            <div class="metric-note">{% if ui_language == "ru" %}Оценка краткосрочного несистематического шума.{% else %}Estimated short-term idiosyncratic noise.{% endif %}</div>
+        </div>
+        <div class="summary-card">
+            <div class="section-kicker">{% t "systematic_risk" %}</div>
+            <strong>{{ calibration_summary.systematic_risk|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></strong>
+            <div class="metric-note">
+                {% if calibration_summary.mean_pair_correlation is not None %}
+                    {% if ui_language == "ru" %}
+                        Средняя историческая корреляция между инструментами: {{ calibration_summary.mean_pair_correlation|floatformat:2 }}.
+                    {% else %}
+                        Mean historical correlation between instruments: {{ calibration_summary.mean_pair_correlation|floatformat:2 }}.
+                    {% endif %}
+                {% else %}
+                    {% if ui_language == "ru" %}
+                        Корреляции не хватило для устойчивой оценки, поэтому использована осторожная базовая доля.
+                    {% else %}
+                        There was not enough overlap for a stable correlation estimate, so a conservative baseline share was used.
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<section class="card">
     <form method="post" class="form-card scenario-form">
         {% csrf_token %}
         {{ form.non_field_errors }}
@@ -42,7 +87,13 @@
             <label>
                 {% t "scenario_preset" %}
                 {{ form.preset }}
-                <small class="muted">{% t "scenario_preset_hint" %}</small>
+                <small class="muted">
+                    {% if ui_language == "ru" %}
+                        Быстрый шаблон рыночного режима; после выбора значения можно подстроить вручную.
+                    {% else %}
+                        Quick market preset that you can fine-tune manually afterward.
+                    {% endif %}
+                </small>
                 {{ form.preset.errors }}
             </label>
             <label>
@@ -58,59 +109,92 @@
             <label>
                 {% t "trend" %}
                 <span class="range-control">{{ form.trend }}</span>
-                <small class="muted">{% t "trend_hint" %}</small>
+                <small class="muted">{% if ui_language == "ru" %}Годовой базовый тренд: плюс задаёт рост, минус — снижение.{% else %}Annual baseline trend: positive values push prices up, negative values push them down.{% endif %}</small>
                 {{ form.trend.errors }}
             </label>
             <label>
                 {% t "volatility" %}
                 <span class="range-control">{{ form.volatility }}</span>
-                <small class="muted">{% t "volatility_hint" %}</small>
+                <small class="muted">{% if ui_language == "ru" %}Сила разброса траекторий; отрицательные значения недопустимы.{% else %}Controls the spread of trajectories; negative values are not allowed.{% endif %}</small>
                 {{ form.volatility.errors }}
             </label>
             <label>
                 {% t "noise_level" %}
                 <span class="range-control">{{ form.noise_level }}</span>
-                <small class="muted">{% t "noise_level_hint" %}</small>
+                <small class="muted">{% if ui_language == "ru" %}Краткосрочная случайность поверх тренда; делает графики менее гладкими.{% else %}Short-term randomness on top of the trend; makes paths less smooth.{% endif %}</small>
                 {{ form.noise_level.errors }}
             </label>
             <label>
                 {% t "market_shock" %}
                 <span class="range-control">{{ form.market_shock }}</span>
-                <small class="muted">{% t "market_shock_hint" %}</small>
+                <small class="muted">{% if ui_language == "ru" %}Разовый стартовый импульс для всего рынка: плюс поддерживает, минус давит.{% else %}One-off starting impulse for the whole market: positive supports, negative pressures prices.{% endif %}</small>
                 {{ form.market_shock.errors }}
             </label>
             <label>
                 {% t "currency_shock" %}
                 <span class="range-control">{{ form.currency_shock }}</span>
-                <small class="muted">{% t "currency_shock_hint" %}</small>
+                <small class="muted">{% if ui_language == "ru" %}Дополнительный разовый эффект для не-базовой валюты портфеля.{% else %}One-off extra effect for assets not denominated in the portfolio base currency.{% endif %}</small>
                 {{ form.currency_shock.errors }}
+            </label>
+            <label>
+                {% t "inflation_shock" %}
+                <span class="range-control">{{ form.inflation_shock }}</span>
+                <small class="muted">{% if ui_language == "ru" %}Годовой инфляционный фон; сильнее всего бьёт по облигациям.{% else %}Annual inflation background; it affects bonds most strongly.{% endif %}</small>
+                {{ form.inflation_shock.errors }}
+            </label>
+            <label>
+                {% t "sector_target" %}
+                {{ form.sector_target }}
+                <small class="muted">{% if ui_language == "ru" %}Выбери сектор только если хочешь смоделировать локальный удар по части портфеля.{% else %}Choose a sector only if you want to model a local shock for part of the portfolio.{% endif %}</small>
+                {{ form.sector_target.errors }}
+            </label>
+            <label>
+                {% t "sector_shock" %}
+                <span class="range-control">{{ form.sector_shock }}</span>
+                <small class="muted">{% if ui_language == "ru" %}Дополнительный шок для выбранного сектора: плюс поддержка, минус давление.{% else %}Extra shock for the selected sector: positive supports it, negative pressures it.{% endif %}</small>
+                {{ form.sector_shock.errors }}
+            </label>
+            <label>
+                {% t "interest_rate_shock" %}
+                <span class="range-control">{{ form.interest_rate_shock }}</span>
+                <small class="muted">{% if ui_language == "ru" %}Изменение ставок для облигаций: рост ставок обычно снижает их цену, снижение ставок поддерживает.{% else %}Rate change for bonds: rising rates usually lower bond prices, falling rates support them.{% endif %}</small>
+                {{ form.interest_rate_shock.errors }}
             </label>
             <label>
                 {% t "systematic_risk" %}
                 <span class="range-control">{{ form.systematic_risk }}</span>
-                <small class="muted">{% t "systematic_risk_hint" %}</small>
+                <small class="muted">{% if ui_language == "ru" %}Насколько синхронно двигаются инструменты: 0 — почти независимо, 1 — почти как единый рынок.{% else %}Shows how synchronously instruments move: 0 is mostly independent, 1 is almost one market.{% endif %}</small>
                 {{ form.systematic_risk.errors }}
+            </label>
+            <label>
+                {% t "mean_reversion_strength" %}
+                <span class="range-control">{{ form.mean_reversion_strength }}</span>
+                <small class="muted">{% if ui_language == "ru" %}Сила возврата к базовому тренду: большие значения сильнее гасят чрезмерные отклонения.{% else %}Strength of returning to the baseline trend: higher values damp excessive deviations more strongly.{% endif %}</small>
+                {{ form.mean_reversion_strength.errors }}
             </label>
             <label>
                 {% t "horizon" %}
                 <span class="range-control">{{ form.time_horizon }}</span>
-                <small class="muted">{% t "horizon_hint" %}</small>
+                <small class="muted">{% if ui_language == "ru" %}Общий горизонт прогноза в днях.{% else %}Total forecast horizon in days.{% endif %}</small>
                 {{ form.time_horizon.errors }}
             </label>
             <label>
                 {% t "time_step" %}
                 <span class="range-control">{{ form.time_step }}</span>
-                <small class="muted">{% t "time_step_hint" %}</small>
+                <small class="muted">{% if ui_language == "ru" %}Шаг пересчёта в днях; он не может быть больше горизонта.{% else %}Recalculation step in days; it cannot exceed the horizon.{% endif %}</small>
                 {{ form.time_step.errors }}
             </label>
             <label>
                 {% t "iterations" %}
                 <span class="range-control">{{ form.iterations_count }}</span>
-                <small class="muted">{% t "iterations_hint" %}</small>
+                <small class="muted">{% if ui_language == "ru" %}Количество прогонов Монте-Карло: больше прогонов даёт стабильнее оценки, но дольше считается.{% else %}Monte Carlo runs: more runs give stabler estimates but take longer to compute.{% endif %}</small>
                 {{ form.iterations_count.errors }}
             </label>
         </div>
         <div class="form-actions">
+            <button type="submit" name="action" value="calibrate" class="button button-secondary">
+                {% if ui_language == "ru" %}Подобрать по истории{% else %}Calibrate from history{% endif %}
+            </button>
             <button type="submit" class="button button-primary">
                 {% if mode == "edit" %}{% t "update_scenario" %}{% else %}{% t "save_scenario" %}{% endif %}
             </button>
@@ -122,11 +206,11 @@
 <script>
     (() => {
         const presetValues = {
-            base: { trend: "0.050000", volatility: "0.150000", noise_level: "0.020000", market_shock: "0.000000", currency_shock: "0.000000", systematic_risk: "0.6500", time_horizon: "365", time_step: "1.0000", iterations_count: "500" },
-            optimistic: { trend: "0.120000", volatility: "0.140000", noise_level: "0.018000", market_shock: "0.040000", currency_shock: "0.030000", systematic_risk: "0.6000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
-            pessimistic: { trend: "-0.040000", volatility: "0.220000", noise_level: "0.030000", market_shock: "-0.050000", currency_shock: "-0.040000", systematic_risk: "0.7000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
-            stress: { trend: "-0.080000", volatility: "0.350000", noise_level: "0.050000", market_shock: "-0.120000", currency_shock: "-0.100000", systematic_risk: "0.8500", time_horizon: "240", time_step: "1.0000", iterations_count: "1000" },
-            crisis: { trend: "-0.180000", volatility: "0.500000", noise_level: "0.080000", market_shock: "-0.200000", currency_shock: "-0.180000", systematic_risk: "0.9500", time_horizon: "180", time_step: "1.0000", iterations_count: "1200" }
+            base: { trend: "0.060000", volatility: "0.120000", noise_level: "0.015000", market_shock: "0.000000", currency_shock: "0.000000", inflation_shock: "0.050000", sector_target: "", sector_shock: "0.000000", interest_rate_shock: "0.000000", systematic_risk: "0.5500", mean_reversion_strength: "0.1200", time_horizon: "365", time_step: "1.0000", iterations_count: "500" },
+            optimistic: { trend: "0.120000", volatility: "0.140000", noise_level: "0.015000", market_shock: "0.030000", currency_shock: "0.020000", inflation_shock: "0.030000", sector_target: "Equities", sector_shock: "0.020000", interest_rate_shock: "-0.010000", systematic_risk: "0.5000", mean_reversion_strength: "0.1000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
+            pessimistic: { trend: "-0.030000", volatility: "0.180000", noise_level: "0.020000", market_shock: "-0.040000", currency_shock: "-0.030000", inflation_shock: "0.070000", sector_target: "Equities", sector_shock: "-0.040000", interest_rate_shock: "0.015000", systematic_risk: "0.6000", mean_reversion_strength: "0.1500", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
+            stress: { trend: "-0.070000", volatility: "0.280000", noise_level: "0.040000", market_shock: "-0.080000", currency_shock: "-0.060000", inflation_shock: "0.100000", sector_target: "Equities", sector_shock: "-0.070000", interest_rate_shock: "0.030000", systematic_risk: "0.7500", mean_reversion_strength: "0.1800", time_horizon: "240", time_step: "1.0000", iterations_count: "900" },
+            crisis: { trend: "-0.120000", volatility: "0.400000", noise_level: "0.060000", market_shock: "-0.150000", currency_shock: "-0.100000", inflation_shock: "0.140000", sector_target: "Equities", sector_shock: "-0.120000", interest_rate_shock: "0.050000", systematic_risk: "0.8800", mean_reversion_strength: "0.2200", time_horizon: "180", time_step: "1.0000", iterations_count: "1000" }
         };
 
         document.querySelectorAll(".scenario-form input[data-slider-min]").forEach((numberInput) => {
@@ -147,6 +231,32 @@
             });
         });
 
+        const horizonInput = document.getElementById("id_time_horizon");
+        const stepInput = document.getElementById("id_time_step");
+        const syncStepLimit = () => {
+            if (!horizonInput || !stepInput) {
+                return;
+            }
+            const horizonValue = Number(horizonInput.value || horizonInput.min || 1);
+            stepInput.max = String(horizonValue);
+            const relatedSlider = stepInput.parentElement.querySelector('input[type="range"]');
+            if (relatedSlider) {
+                relatedSlider.max = String(horizonValue);
+            }
+            if (Number(stepInput.value || 0) > horizonValue) {
+                stepInput.value = String(horizonValue);
+                if (relatedSlider) {
+                    relatedSlider.value = String(horizonValue);
+                }
+            }
+        };
+
+        if (horizonInput && stepInput) {
+            horizonInput.addEventListener("input", syncStepLimit);
+            horizonInput.addEventListener("change", syncStepLimit);
+            syncStepLimit();
+        }
+
         const presetField = document.getElementById("id_preset");
         if (presetField) {
             presetField.addEventListener("change", () => {
@@ -162,6 +272,7 @@
                     input.value = value;
                     input.dispatchEvent(new Event("input", { bubbles: true }));
                 });
+                syncStepLimit();
             });
         }
     })();

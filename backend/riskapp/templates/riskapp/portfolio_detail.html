@@ -1,5 +1,6 @@
 {% extends "riskapp/base.html" %}
 {% load riskapp_i18n %}
+{% now "Y-m-d\\TH:i" as current_trade_time %}
 
 {% block title %}{{ portfolio.name }} | {% t "site_name" %}{% endblock %}
 
@@ -27,30 +28,42 @@
         <div class="hero-spotlight">
             <span class="pill">{% t "current_value" %}</span>
             <div class="eyebrow-value">{{ portfolio.current_value|floatformat:2 }}</div>
-            <div class="metric-note">{% t "updated" %}: {{ portfolio.updated_at|date:"Y-m-d H:i" }}</div>
+            <div class="metric-note">{{ portfolio_unit_label }} · {% t "updated" %}: {{ portfolio.updated_at|date:"Y-m-d H:i" }}</div>
         </div>
     </div>
 </section>
 
+{% if portfolio_has_missing_rates %}
+<section class="card">
+    <div class="empty">{% t "missing_exchange_rates_warning" %}</div>
+</section>
+{% endif %}
+
 <section class="grid">
-    <article class="card span-4">
+    <article class="card span-3">
         <div class="section-kicker">{% t "current_value" %}</div>
         <div class="metric">{{ portfolio.current_value|floatformat:2 }}</div>
+        <div class="metric-note">{{ portfolio_unit_label }}</div>
     </article>
-    <article class="card span-4">
+    <article class="card span-3">
         <div class="section-kicker">{% t "updated" %}</div>
         <div class="metric" style="font-size: 1.75rem;">{{ portfolio.updated_at|date:"Y-m-d H:i" }}</div>
     </article>
-    <article class="card span-4">
+    <article class="card span-3">
         <div class="section-kicker">{% t "positions" %}</div>
         <div class="metric">{{ positions|length }}</div>
+    </article>
+    <article class="card span-3">
+        <div class="section-kicker">{% if ui_language == "ru" %}Сделки{% else %}Trades{% endif %}</div>
+        <div class="metric">{{ operations_count }}</div>
+        <div class="metric-note">{% if ui_language == "ru" %}Покупки и продажи, записанные в журнал портфеля{% else %}Buys and sells recorded for this portfolio{% endif %}</div>
     </article>
 
     <article class="card span-8">
         <div class="card-header">
             <div>
-                <div class="section-kicker">{% t "positions" %}</div>
-                <h2>{% t "positions" %}</h2>
+                <div class="section-kicker">{% if ui_language == "ru" %}Текущие позиции{% else %}Current holdings{% endif %}</div>
+                <h2>{% if ui_language == "ru" %}Позиции и продажа{% else %}Holdings and selling{% endif %}</h2>
             </div>
         </div>
         {% if positions %}
@@ -62,29 +75,71 @@
                             <th>{% t "type" %}</th>
                             <th>{% t "currency" %}</th>
                             <th>{% t "quantity" %}</th>
+                            <th>{% if ui_language == "ru" %}Средняя цена входа{% else %}Average entry price{% endif %}</th>
                             <th>{% t "market_price" %}</th>
+                            <th>{% if ui_language == "ru" %}Годовой поток{% else %}Annual cash flow{% endif %}</th>
                             <th>{% t "position_value" %}</th>
-                            <th>{% t "action" %}</th>
+                            <th>{% if ui_language == "ru" %}Продажа{% else %}Sell{% endif %}</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for position in positions %}
                             <tr>
-                                <td>{{ position.instrument.ticker }}</td>
+                                <td>
+                                    <strong>{{ position.instrument.ticker }}</strong><br>
+                                    <span class="muted">{{ position.instrument.name }}</span>
+                                </td>
                                 <td>{{ position.instrument.instrument_type }}</td>
                                 <td>{{ position.instrument.currency }}</td>
                                 <td>{{ position.quantity }}</td>
-                                <td>{{ position.instrument.current_price|floatformat:4 }}</td>
-                                <td>{{ position.position_value|floatformat:2 }}</td>
+                                <td>{{ position.average_purchase_price|money_by_currency:position.instrument.currency }} <span class="inline-unit">{{ position.instrument.currency }}</span></td>
+                                <td>{{ position.instrument.current_price|money_by_currency:position.instrument.currency }} <span class="inline-unit">{{ position.instrument.currency }}</span></td>
                                 <td>
-                                    <form method="post" action="{% url 'riskapp:portfolio_position_update' portfolio.id position.id %}" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                    {% if position.instrument.normalized_type == "bond" %}
+                                        {{ position.instrument.coupon_yield|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span>
+                                    {% else %}
+                                        {{ position.instrument.dividend_yield|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if position.position_value_converted != None %}
+                                        {{ position.position_value_converted|floatformat:2 }} <span class="inline-unit">{{ portfolio_unit_label }}</span>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td style="min-width: 320px;">
+                                    <form method="post" action="{% url 'riskapp:portfolio_operation_create' portfolio.id %}" class="form-card" style="padding: 14px; margin: 0;">
                                         {% csrf_token %}
-                                        <input type="number" name="quantity" min="1" value="{{ position.quantity }}" style="max-width: 110px;">
-                                        <button type="submit" class="button button-secondary">{% t "save" %}</button>
-                                    </form>
-                                    <form method="post" action="{% url 'riskapp:portfolio_position_delete' portfolio.id position.id %}" onsubmit="return confirm('{% t "confirm_delete_position" %}');" style="margin-top: 8px;">
-                                        {% csrf_token %}
-                                        <button type="submit" class="button button-secondary">{% t "delete" %}</button>
+                                        <input type="hidden" name="operation_type" value="SELL">
+                                        <input type="hidden" name="instrument" value="{{ position.instrument.id }}">
+                                        <input type="hidden" name="next" value="{% url 'riskapp:portfolio_detail' portfolio.id %}">
+                                        <div class="detail-list" style="margin-bottom: 12px;">
+                                            <div class="detail-row">
+                                                <span class="detail-label">{% if ui_language == "ru" %}Текущая котировка{% else %}Current market quote{% endif %}</span>
+                                                <strong>{{ position.instrument.current_price|money_by_currency:position.instrument.currency }} <span class="inline-unit">{{ position.instrument.currency }}</span></strong>
+                                            </div>
+                                            <div class="detail-row">
+                                                <span class="detail-label">{% if ui_language == "ru" %}Годовой поток{% else %}Annual cash flow{% endif %}</span>
+                                                <strong>
+                                                    {% if position.instrument.normalized_type == "bond" %}
+                                                        {{ position.instrument.coupon_yield|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span>
+                                                    {% else %}
+                                                        {{ position.instrument.dividend_yield|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span>
+                                                    {% endif %}
+                                                </strong>
+                                            </div>
+                                            <div class="detail-row">
+                                                <span class="detail-label">{% if ui_language == "ru" %}Комиссия{% else %}Commission{% endif %}</span>
+                                                <strong>{% if ui_language == "ru" %}Считается автоматически по сделке{% else %}Calculated automatically from the trade{% endif %}</strong>
+                                            </div>
+                                        </div>
+                                        <div class="page-actions" style="justify-content: flex-start; gap: 10px;">
+                                            <input type="number" name="quantity" min="1" max="{{ position.quantity }}" value="1" style="max-width: 110px;">
+                                            <input type="hidden" name="executed_at" value="{{ current_trade_time }}">
+                                            <button type="submit" class="button button-ghost">{% if ui_language == "ru" %}Продать{% else %}Sell{% endif %}</button>
+                                            <button type="submit" name="quantity" value="{{ position.quantity }}" class="button button-secondary">{% if ui_language == "ru" %}Продать всё{% else %}Sell all{% endif %}</button>
+                                        </div>
                                     </form>
                                 </td>
                             </tr>
@@ -100,123 +155,81 @@
     <article class="card span-4">
         <div class="card-header">
             <div>
-                <div class="section-kicker">{% t "add_position" %}</div>
-                <h2>{% t "add_position" %}</h2>
+                <div class="section-kicker">{% if ui_language == "ru" %}Покупка{% else %}Buying{% endif %}</div>
+                <h2>{% if ui_language == "ru" %}Покупка через каталог{% else %}Buy through the catalog{% endif %}</h2>
             </div>
         </div>
-        <p class="muted">{% t "add_position_subtitle" %}</p>
+        <p class="muted">
+            {% if ui_language == "ru" %}
+                Покупка выполняется через каталог инструментов с поиском и фильтрами. Пользователь выбирает бумагу, указывает только количество, а цена берётся из базы автоматически. Комиссия рассчитывается системой как брокерская комиссия сделки.
+            {% else %}
+                Buying goes through the searchable instrument catalog. The user specifies only quantity, the quote is taken from the database, and commission is calculated automatically.
+            {% endif %}
+        </p>
         <div class="detail-list">
             <div class="detail-row">
-                <span class="detail-label">{% t "instrument_search_title" %}</span>
-                <strong>{% t "instrument_search_short" %}</strong>
+                <span class="detail-label">{% if ui_language == "ru" %}Что выбирает пользователь{% else %}What the user picks{% endif %}</span>
+                <strong>{% if ui_language == "ru" %}Инструмент и количество{% else %}Instrument and quantity{% endif %}</strong>
             </div>
             <div class="detail-row">
-                <span class="detail-label">{% t "currency" %}</span>
-                <strong>{% t "instrument_filter_currency_hint" %}</strong>
+                <span class="detail-label">{% if ui_language == "ru" %}Что подставляет система{% else %}What the system provides{% endif %}</span>
+                <strong>{% if ui_language == "ru" %}Текущую цену и комиссию{% else %}Current quote and commission{% endif %}</strong>
             </div>
             <div class="detail-row">
-                <span class="detail-label">{% t "price" %}</span>
-                <strong>{% t "instrument_filter_price_hint" %}</strong>
+                <span class="detail-label">{% if ui_language == "ru" %}Что записывается{% else %}What gets recorded{% endif %}</span>
+                <strong>{% if ui_language == "ru" %}Биржевая сделка и обновлённая позиция{% else %}Trade operation and updated position{% endif %}</strong>
             </div>
         </div>
         <div class="form-actions">
-            <a href="{% url 'riskapp:instruments' %}?portfolio={{ portfolio.id }}" class="button button-primary">{% t "browse_market_instruments" %}</a>
+            <a href="{% url 'riskapp:instruments' %}?portfolio={{ portfolio.id }}" class="button button-primary">{% if ui_language == "ru" %}Купить инструменты{% else %}Buy instruments{% endif %}</a>
+            <a href="{% url 'riskapp:portfolio_operations' portfolio.id %}" class="button button-ghost">{% if ui_language == "ru" %}История сделок{% else %}Trade history{% endif %}</a>
         </div>
     </article>
 
     <article class="card span-12">
         <div class="card-header">
             <div>
-                <div class="section-kicker">{% t "scenario_builder" %}</div>
-                <h2>{% t "scenario_builder" %}</h2>
+                <div class="section-kicker">{% if ui_language == "ru" %}Последние сделки{% else %}Recent trades{% endif %}</div>
+                <h2>{% if ui_language == "ru" %}Последние операции по портфелю{% else %}Latest portfolio trades{% endif %}</h2>
             </div>
+            <a href="{% url 'riskapp:portfolio_operations' portfolio.id %}" class="button button-ghost">{% if ui_language == "ru" %}Открыть журнал{% else %}Open journal{% endif %}</a>
         </div>
-        <p class="muted">{% t "scenario_builder_subtitle" %}</p>
-        <div class="detail-list" style="margin-bottom: 18px;">
-            <div class="detail-row"><span class="detail-label">{% t "trend" %}</span><strong>{% t "trend_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "volatility" %}</span><strong>{% t "volatility_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "noise_level" %}</span><strong>{% t "noise_level_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "market_shock" %}</span><strong>{% t "market_shock_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "currency_shock" %}</span><strong>{% t "currency_shock_hint" %}</strong></div>
-            <div class="detail-row"><span class="detail-label">{% t "systematic_risk" %}</span><strong>{% t "systematic_risk_hint" %}</strong></div>
-        </div>
-        <form method="post" action="{% url 'riskapp:portfolio_scenario_run' portfolio.id %}" class="form-card scenario-form">
-            {% csrf_token %}
-            {{ scenario_form.non_field_errors }}
-            <div class="scenario-controls">
-                <label>
-                    {% t "scenario_preset" %}
-                    {{ scenario_form.preset }}
-                    <small class="muted">{% t "scenario_preset_hint" %}</small>
-                    {{ scenario_form.preset.errors }}
-                </label>
-                <label>
-                    {% t "name" %}
-                    {{ scenario_form.name }}
-                    {{ scenario_form.name.errors }}
-                </label>
-                <label>
-                    {% t "description" %}
-                    {{ scenario_form.description }}
-                    {{ scenario_form.description.errors }}
-                </label>
-                <label>
-                    {% t "trend" %}
-                    <span class="range-control">{{ scenario_form.trend }}</span>
-                    <small class="muted">{% t "trend_hint" %}</small>
-                    {{ scenario_form.trend.errors }}
-                </label>
-                <label>
-                    {% t "volatility" %}
-                    <span class="range-control">{{ scenario_form.volatility }}</span>
-                    <small class="muted">{% t "volatility_hint" %}</small>
-                    {{ scenario_form.volatility.errors }}
-                </label>
-                <label>
-                    {% t "noise_level" %}
-                    <span class="range-control">{{ scenario_form.noise_level }}</span>
-                    <small class="muted">{% t "noise_level_hint" %}</small>
-                    {{ scenario_form.noise_level.errors }}
-                </label>
-                <label>
-                    {% t "market_shock" %}
-                    <span class="range-control">{{ scenario_form.market_shock }}</span>
-                    <small class="muted">{% t "market_shock_hint" %}</small>
-                    {{ scenario_form.market_shock.errors }}
-                </label>
-                <label>
-                    {% t "currency_shock" %}
-                    <span class="range-control">{{ scenario_form.currency_shock }}</span>
-                    <small class="muted">{% t "currency_shock_hint" %}</small>
-                    {{ scenario_form.currency_shock.errors }}
-                </label>
-                <label>
-                    {% t "systematic_risk" %}
-                    <span class="range-control">{{ scenario_form.systematic_risk }}</span>
-                    <small class="muted">{% t "systematic_risk_hint" %}</small>
-                    {{ scenario_form.systematic_risk.errors }}
-                </label>
-                <label>
-                    {% t "horizon" %}
-                    <span class="range-control">{{ scenario_form.time_horizon }}</span>
-                    <small class="muted">{% t "horizon_hint" %}</small>
-                    {{ scenario_form.time_horizon.errors }}
-                </label>
-                <label>
-                    {% t "time_step" %}
-                    <span class="range-control">{{ scenario_form.time_step }}</span>
-                    <small class="muted">{% t "time_step_hint" %}</small>
-                    {{ scenario_form.time_step.errors }}
-                </label>
-                <label>
-                    {% t "iterations" %}
-                    <span class="range-control">{{ scenario_form.iterations_count }}</span>
-                    <small class="muted">{% t "iterations_hint" %}</small>
-                    {{ scenario_form.iterations_count.errors }}
-                </label>
+        {% if recent_operations %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>{% if ui_language == "ru" %}Дата{% else %}Date{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Инструмент{% else %}Instrument{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Тип сделки{% else %}Trade type{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Количество{% else %}Quantity{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Цена за 1 шт.{% else %}Unit price{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Комиссия{% else %}Commission{% endif %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for operation in recent_operations %}
+                            <tr>
+                                <td>{{ operation.executed_at|date:"Y-m-d H:i" }}</td>
+                                <td>{{ operation.instrument.ticker }}</td>
+                                <td>
+                                    {% if operation.operation_type == "BUY" %}
+                                        {% if ui_language == "ru" %}Покупка{% else %}Buy{% endif %}
+                                    {% else %}
+                                        {% if ui_language == "ru" %}Продажа{% else %}Sell{% endif %}
+                                    {% endif %}
+                                </td>
+                                <td>{{ operation.quantity }}</td>
+                                <td>{{ operation.price_per_unit|money_by_currency:operation.instrument.currency }} <span class="inline-unit">{{ operation.instrument.currency }}</span></td>
+                                <td>{{ operation.commission|money_by_currency:operation.instrument.currency }} <span class="inline-unit">{{ operation.instrument.currency }}</span></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
-            <button type="submit" class="button button-primary">{% t "save_and_run_scenario" %}</button>
-        </form>
+        {% else %}
+            <div class="empty">{% if ui_language == "ru" %}Сделок пока нет. Первая покупка или продажа появится здесь автоматически.{% else %}No trades yet. The first buy or sell will appear here automatically.{% endif %}</div>
+        {% endif %}
     </article>
 
     <article class="card span-12">
@@ -225,70 +238,25 @@
                 <div class="section-kicker">{% t "scenarios" %}</div>
                 <h2>{% t "scenarios" %}</h2>
             </div>
+            <a href="{% url 'riskapp:scenario_create' %}" class="button button-secondary">{% if ui_language == "ru" %}Создать сценарий{% else %}Create scenario{% endif %}</a>
         </div>
         {% if scenarios %}
             <div class="list-block">
-            {% for scenario in scenarios %}
-                <div class="list-item">
-                    <h3>{{ scenario.name }}</h3>
-                    <p class="muted">{% t "trend" %} {{ scenario.trend|floatformat:4 }}, {% t "volatility" %} {{ scenario.volatility|floatformat:4 }}</p>
-                    <form method="post" action="{% url 'riskapp:run_scenario' scenario.id %}">
-                        {% csrf_token %}
-                        <button type="submit" class="button button-primary">{% t "run_simulation" %}</button>
-                    </form>
-                </div>
-            {% endfor %}
+                {% for scenario in scenarios %}
+                    <div class="list-item">
+                        <h3>{{ scenario.name }}</h3>
+                        <p class="muted">{% t "trend" %} {{ scenario.trend|floatformat:4 }}, {% t "volatility" %} {{ scenario.volatility|floatformat:4 }}</p>
+                        <form method="post" action="{% url 'riskapp:run_scenario' scenario.id %}">
+                            {% csrf_token %}
+                            <button type="submit" class="button button-primary">{% t "run_simulation" %}</button>
+                        </form>
+                    </div>
+                {% endfor %}
             </div>
         {% else %}
             <div class="empty">{% t "no_scenarios_for_portfolio" %}</div>
         {% endif %}
     </article>
 </section>
-<script>
-    (() => {
-        const presetValues = {
-            base: { trend: "0.050000", volatility: "0.150000", noise_level: "0.020000", market_shock: "0.000000", currency_shock: "0.000000", systematic_risk: "0.6500", time_horizon: "365", time_step: "1.0000", iterations_count: "500" },
-            optimistic: { trend: "0.120000", volatility: "0.140000", noise_level: "0.018000", market_shock: "0.040000", currency_shock: "0.030000", systematic_risk: "0.6000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
-            pessimistic: { trend: "-0.040000", volatility: "0.220000", noise_level: "0.030000", market_shock: "-0.050000", currency_shock: "-0.040000", systematic_risk: "0.7000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
-            stress: { trend: "-0.080000", volatility: "0.350000", noise_level: "0.050000", market_shock: "-0.120000", currency_shock: "-0.100000", systematic_risk: "0.8500", time_horizon: "240", time_step: "1.0000", iterations_count: "1000" },
-            crisis: { trend: "-0.180000", volatility: "0.500000", noise_level: "0.080000", market_shock: "-0.200000", currency_shock: "-0.180000", systematic_risk: "0.9500", time_horizon: "180", time_step: "1.0000", iterations_count: "1200" }
-        };
 
-        document.querySelectorAll(".scenario-form input[data-slider-min]").forEach((numberInput) => {
-            const slider = document.createElement("input");
-            slider.type = "range";
-            slider.min = numberInput.dataset.sliderMin;
-            slider.max = numberInput.dataset.sliderMax;
-            slider.step = numberInput.dataset.sliderStep;
-            slider.value = numberInput.value || slider.min;
-            slider.setAttribute("aria-hidden", "true");
-            numberInput.parentElement.insertBefore(slider, numberInput);
-
-            slider.addEventListener("input", () => {
-                numberInput.value = slider.value;
-            });
-            numberInput.addEventListener("input", () => {
-                slider.value = numberInput.value;
-            });
-        });
-
-        const presetField = document.getElementById("id_preset");
-        if (presetField) {
-            presetField.addEventListener("change", () => {
-                const values = presetValues[presetField.value];
-                if (!values) {
-                    return;
-                }
-                Object.entries(values).forEach(([name, value]) => {
-                    const input = document.getElementById(`id_${name}`);
-                    if (!input) {
-                        return;
-                    }
-                    input.value = value;
-                    input.dispatchEvent(new Event("input", { bubbles: true }));
-                });
-            });
-        }
-    })();
-</script>
 {% endblock %}

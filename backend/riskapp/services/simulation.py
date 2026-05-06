@@ -7,6 +7,7 @@ from statistics import mean, median, pstdev
 from django.db import transaction
 
 from riskapp.models import RiskMetric, Scenario, SimulationResult
+from riskapp.services.exchange_rates import convert_amount, normalize_currency_code
 
 
 DECIMAL_2 = Decimal("0.01")
@@ -15,9 +16,9 @@ MAX_CHART_POINTS = 160
 SAMPLE_PATHS_LIMIT = 7
 CRITICAL_DRAWDOWN_LEVEL = 0.10
 INSTRUMENT_TYPE_PROFILES = {
-    "stock": {"trend": 1.00, "volatility": 1.10, "noise": 1.00},
-    "bond": {"trend": 0.55, "volatility": 0.35, "noise": 0.40},
-    "etf": {"trend": 0.90, "volatility": 0.80, "noise": 0.70},
+    "stock": {"trend": 1.00, "volatility": 1.10, "noise": 1.00, "inflation": 0.35},
+    "bond": {"trend": 0.55, "volatility": 0.35, "noise": 0.40, "inflation": 0.85},
+    "etf": {"trend": 0.90, "volatility": 0.80, "noise": 0.70, "inflation": 0.50},
 }
 
 
@@ -56,10 +57,15 @@ def calculate_max_drawdown(path_values):
 
 def get_portfolio_start_value(scenario):
     positions = scenario.portfolio.positions.select_related("instrument")
-    return sum(
-        Decimal(position.quantity) * Decimal(position.instrument.current_price)
-        for position in positions
-    )
+    total = Decimal("0")
+    base_currency = normalize_currency_code(scenario.portfolio.base_currency)
+    for position in positions:
+        raw_value = Decimal(position.quantity) * Decimal(position.instrument.current_price)
+        converted = convert_amount(raw_value, position.instrument.currency, base_currency)
+        if converted is None:
+            raise ValueError("Missing exchange rate for portfolio currency conversion.")
+        total += converted
+    return total
 
 
 def get_portfolio_positions(scenario):
@@ -111,10 +117,46 @@ def get_instrument_profile(position):
     )
 
 
-def get_currency_multiplier(position, currency_shock):
-    if str(position.instrument.currency).upper() in {"RUB", "SUR"}:
+def get_currency_multiplier(position, currency_shock, base_currency):
+    if normalize_currency_code(position.instrument.currency) == normalize_currency_code(base_currency):
         return 0.0
     return currency_shock
+
+
+def get_sector_multiplier(position, sector_target, sector_shock):
+    if not sector_target:
+        return 0.0
+    instrument_sector = (position.instrument.sector or "").strip().lower()
+    if instrument_sector and instrument_sector == sector_target.strip().lower():
+        return sector_shock
+    return 0.0
+
+
+def get_interest_rate_multiplier(position, interest_rate_shock):
+    if position.instrument.instrument_type != "bond":
+        return 0.0
+    return -interest_rate_shock * 0.60
+
+
+def get_income_yield(position):
+    instrument = position.instrument
+    instrument_type = instrument.normalized_type
+    if instrument_type == "bond":
+        return float(instrument.coupon_yield or 0)
+    if instrument_type in {"stock", "etf"}:
+        return float(instrument.dividend_yield or 0)
+    return float(instrument.dividend_yield or 0)
+
+
+def build_shock_weights(steps):
+    shock_window = max(1, min(8, max(3, round(steps * 0.05))))
+    raw_weights = [shock_window - index for index in range(shock_window)]
+    total_weight = sum(raw_weights)
+    return [weight / total_weight for weight in raw_weights]
+
+
+def clamp(value, minimum, maximum):
+    return max(minimum, min(value, maximum))
 
 
 def build_instrument_path(
@@ -123,9 +165,14 @@ def build_instrument_path(
     trend_per_step,
     volatility_per_step,
     noise_per_step,
+    income_yield_per_step,
     market_shock,
     currency_shock,
+    inflation_per_step,
+    sector_shock,
+    interest_rate_shock,
     systematic_risk,
+    mean_reversion_strength,
     steps,
     generator,
 ):
@@ -134,10 +181,19 @@ def build_instrument_path(
     profile_trend = profile["trend"]
     profile_volatility = profile["volatility"]
     profile_noise = profile["noise"]
+    profile_inflation = profile["inflation"]
+    shock_weights = build_shock_weights(steps)
+    total_initial_shock = clamp(
+        market_shock + currency_shock + sector_shock + interest_rate_shock,
+        -0.35,
+        0.35,
+    )
+    target_return = trend_per_step * profile_trend
+    previous_return = target_return
 
     for step_index in range(steps):
         market_component = generator.gauss(
-            trend_per_step * profile_trend,
+            0,
             volatility_per_step * profile_volatility,
         )
         idiosyncratic_component = generator.gauss(
@@ -149,13 +205,18 @@ def build_instrument_path(
             noise_per_step * profile_noise,
         )
         period_return = (
-            systematic_risk * market_component
+            target_return
+            + systematic_risk * market_component
             + (1 - systematic_risk) * idiosyncratic_component
             + noise_component
         )
-        if step_index == 0:
-            period_return += market_shock + currency_shock
+        period_return += income_yield_per_step
+        period_return += mean_reversion_strength * (target_return - previous_return)
+        period_return -= inflation_per_step * profile_inflation
+        if step_index < len(shock_weights):
+            period_return += total_initial_shock * shock_weights[step_index]
         current_value = max(current_value * (1 + period_return), 0.0)
+        previous_return = period_return
         values.append(current_value)
 
     return values
@@ -182,11 +243,17 @@ def run_scenario_simulation(scenario_id, seed=None):
     noise_per_step = float(scenario.noise_level) * sqrt(years_per_step)
     market_shock = float(scenario.market_shock)
     currency_shock = float(scenario.currency_shock)
+    inflation_per_step = float(scenario.inflation_shock) * years_per_step
+    sector_target = scenario.sector_target or ""
+    sector_shock = float(scenario.sector_shock)
+    interest_rate_shock = float(scenario.interest_rate_shock)
     systematic_risk = float(scenario.systematic_risk)
+    mean_reversion_strength = float(scenario.mean_reversion_strength)
     steps = max(1, ceil(float(scenario.time_horizon) / step_days))
     iterations_count = int(scenario.iterations_count)
     start_value_float = float(start_value)
     generator = random.Random(seed)
+    base_currency = normalize_currency_code(scenario.portfolio.base_currency)
 
     final_values = []
     iteration_returns = []
@@ -198,22 +265,37 @@ def run_scenario_simulation(scenario_id, seed=None):
     }
     position_sample_paths = {}
     sample_paths = []
+    drawdown_path_sums = [0.0] * (steps + 1)
 
     for _ in range(iterations_count):
         position_paths = []
 
         for position in positions:
-            position_start_value = float(Decimal(position.quantity) * Decimal(position.instrument.current_price))
+            raw_position_start_value = Decimal(position.quantity) * Decimal(position.instrument.current_price)
+            converted_position_start_value = convert_amount(
+                raw_position_start_value,
+                position.instrument.currency,
+                base_currency,
+            )
+            if converted_position_start_value is None:
+                raise ValueError("Missing exchange rate for portfolio currency conversion.")
+            position_start_value = float(converted_position_start_value)
             profile = get_instrument_profile(position)
+            income_yield_per_step = get_income_yield(position) * years_per_step
             position_path = build_instrument_path(
                 start_value=position_start_value,
                 profile=profile,
                 trend_per_step=trend_per_step,
                 volatility_per_step=volatility_per_step,
                 noise_per_step=noise_per_step,
+                income_yield_per_step=income_yield_per_step,
                 market_shock=market_shock,
-                currency_shock=get_currency_multiplier(position, currency_shock),
+                currency_shock=get_currency_multiplier(position, currency_shock, base_currency),
+                inflation_per_step=inflation_per_step,
+                sector_shock=get_sector_multiplier(position, sector_target, sector_shock),
+                interest_rate_shock=get_interest_rate_multiplier(position, interest_rate_shock),
                 systematic_risk=systematic_risk,
+                mean_reversion_strength=mean_reversion_strength,
                 steps=steps,
                 generator=generator,
             )
@@ -230,6 +312,11 @@ def run_scenario_simulation(scenario_id, seed=None):
         final_values.append(final_value)
         iteration_returns.append((final_value - start_value_float) / start_value_float)
         max_drawdowns.append(calculate_max_drawdown(portfolio_path))
+        running_peak = portfolio_path[0]
+        for index, value in enumerate(portfolio_path):
+            running_peak = max(running_peak, value)
+            drawdown = ((running_peak - value) / running_peak) if running_peak > 0 else 0.0
+            drawdown_path_sums[index] += drawdown
 
         for index, value in enumerate(portfolio_path):
             path_sums[index] += value
@@ -260,26 +347,33 @@ def run_scenario_simulation(scenario_id, seed=None):
     percentile_95_final_value = percentile(sorted_final_values, 0.95)
 
     average_path = [value / iterations_count for value in path_sums]
+    average_drawdown_path = [value / iterations_count for value in drawdown_path_sums]
     best_final_value = max(final_values)
     worst_final_value = min(final_values)
     position_paths = []
 
     for position in positions:
-        position_start_value = Decimal(position.quantity) * Decimal(position.instrument.current_price)
+        raw_position_start_value = Decimal(position.quantity) * Decimal(position.instrument.current_price)
+        position_start_value = convert_amount(raw_position_start_value, position.instrument.currency, base_currency)
+        if position_start_value is None:
+            raise ValueError("Missing exchange rate for portfolio currency conversion.")
         average_position_path = [value / iterations_count for value in position_path_sums[position.id]]
         chart_position_path = position_sample_paths.get(position.id, average_position_path)
-        final_position_value = chart_position_path[-1]
+        final_position_value = average_position_path[-1]
         position_return = (
             (final_position_value - float(position_start_value)) / float(position_start_value)
             if position_start_value > 0
             else 0.0
         )
+        annual_income_yield = get_income_yield(position)
         position_paths.append({
             "ticker": position.instrument.ticker,
             "name": position.instrument.name,
             "currency": position.instrument.currency,
+            "base_currency": base_currency,
             "instrument_type": position.instrument.instrument_type,
             "quantity": position.quantity,
+            "annual_income_yield_percent": float(quantize_decimal(annual_income_yield * 100)),
             "start_value": float(quantize_decimal(position_start_value, DECIMAL_2)),
             "final_value": float(quantize_decimal(final_position_value, DECIMAL_2)),
             "return_percent": float(quantize_decimal(position_return * 100)),
@@ -299,11 +393,20 @@ def run_scenario_simulation(scenario_id, seed=None):
             f"Simulated {iterations_count} iterations with {steps} steps. "
             f"Portfolio instruments move separately under a shared market factor "
             f"({quantize_decimal(systematic_risk)}), market shock {quantize_decimal(market_shock)} "
-            f"and currency shock {quantize_decimal(currency_shock)} for non-RUB assets."
+            f"currency shock {quantize_decimal(currency_shock)} for non-base-currency assets, "
+            f"inflation shock {quantize_decimal(scenario.inflation_shock)} "
+            f"with mean reversion {quantize_decimal(mean_reversion_strength, Decimal('0.0001'))}, "
+            f"sector shock {quantize_decimal(sector_shock)} for sector '{sector_target or 'all'}', "
+            f"interest-rate shock {quantize_decimal(interest_rate_shock)} for bonds, "
+            f"and annual income yields from coupons or dividends."
         ),
         chart_data={
             "labels": format_chart_labels(len(average_path), step_days),
             "average_path": format_chart_path(average_path),
+            "average_drawdown_path_percent": [
+                float(quantize_decimal(-value * 100, DECIMAL_2))
+                for value in downsample_path(average_drawdown_path)
+            ],
             "sample_paths": sample_paths,
             "position_paths": position_paths,
             "start_value": float(start_value.quantize(DECIMAL_2)),
@@ -321,7 +424,13 @@ def run_scenario_simulation(scenario_id, seed=None):
             ),
             "market_shock_percent": float(quantize_decimal(market_shock * 100)),
             "currency_shock_percent": float(quantize_decimal(currency_shock * 100)),
+            "inflation_shock_percent": float(quantize_decimal(float(scenario.inflation_shock) * 100)),
+            "sector_target": sector_target,
+            "sector_shock_percent": float(quantize_decimal(sector_shock * 100)),
+            "interest_rate_shock_percent": float(quantize_decimal(interest_rate_shock * 100)),
             "systematic_risk_percent": float(quantize_decimal(systematic_risk * 100)),
+            "mean_reversion_strength_percent": float(quantize_decimal(mean_reversion_strength * 100)),
+            "base_currency": base_currency,
             "steps": steps,
             "iterations": iterations_count,
         },

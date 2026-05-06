@@ -3,7 +3,17 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from django.db.models import Count
 
-from .models import Instrument, Portfolio, PortfolioPosition, RiskMetric, Scenario, SimulationResult
+from .models import (
+    ExchangeRate,
+    Instrument,
+    InstrumentPriceHistory,
+    Portfolio,
+    PortfolioPosition,
+    RiskMetric,
+    Scenario,
+    SimulationResult,
+    TradeOperation,
+)
 
 
 admin.site.site_header = "Страница администратора Market Risk"
@@ -71,19 +81,46 @@ class RiskMetricAdmin(admin.ModelAdmin):
 
 @admin.register(Instrument)
 class InstrumentAdmin(admin.ModelAdmin):
-    list_display = ("ticker", "name", "instrument_type", "currency", "current_price", "last_price_updated_at", "created_at")
+    list_display = (
+        "ticker",
+        "name",
+        "instrument_type",
+        "sector",
+        "currency",
+        "current_price",
+        "dividend_yield",
+        "coupon_yield",
+        "last_price_updated_at",
+        "created_at",
+    )
     search_fields = ("ticker", "name")
-    list_filter = ("instrument_type", "currency")
+    list_filter = ("instrument_type", "sector", "currency")
     ordering = ("ticker",)
+
+
+@admin.register(InstrumentPriceHistory)
+class InstrumentPriceHistoryAdmin(admin.ModelAdmin):
+    list_display = ("instrument", "price", "currency", "source", "captured_at")
+    search_fields = ("instrument__ticker", "instrument__name", "source")
+    list_filter = ("currency", "source", "captured_at")
+    ordering = ("-captured_at",)
 
 
 @admin.register(Portfolio)
 class PortfolioAdmin(admin.ModelAdmin):
-    list_display = ("name", "user", "initial_value", "current_value", "created_at", "updated_at")
+    list_display = ("name", "user", "base_currency", "initial_value", "current_value", "created_at", "updated_at")
     readonly_fields = ("current_value", "created_at", "updated_at")
     search_fields = ("name", "user__username", "user__email")
-    list_filter = ("created_at", "updated_at")
+    list_filter = ("base_currency", "created_at", "updated_at")
     inlines = [PortfolioPositionInline]
+
+
+@admin.register(ExchangeRate)
+class ExchangeRateAdmin(admin.ModelAdmin):
+    list_display = ("from_currency", "to_currency", "rate", "rate_date", "source", "updated_at")
+    search_fields = ("from_currency", "to_currency", "source")
+    list_filter = ("source", "rate_date", "to_currency")
+    ordering = ("-rate_date", "from_currency", "to_currency")
 
 
 @admin.register(PortfolioPosition)
@@ -91,6 +128,24 @@ class PortfolioPositionAdmin(admin.ModelAdmin):
     list_display = ("portfolio", "instrument", "quantity", "average_purchase_price", "created_at")
     search_fields = ("portfolio__name", "instrument__ticker", "instrument__name")
     list_filter = ("created_at", "instrument__instrument_type")
+
+
+@admin.register(TradeOperation)
+class TradeOperationAdmin(admin.ModelAdmin):
+    list_display = (
+        "executed_at",
+        "portfolio",
+        "instrument",
+        "operation_type",
+        "quantity",
+        "price_per_unit",
+        "commission",
+        "realized_pnl",
+        "user",
+    )
+    search_fields = ("portfolio__name", "instrument__ticker", "instrument__name", "user__username")
+    list_filter = ("operation_type", "executed_at", "instrument__instrument_type")
+    ordering = ("-executed_at", "-created_at")
 
 
 @admin.register(Scenario)
@@ -104,6 +159,9 @@ class ScenarioAdmin(admin.ModelAdmin):
         "volatility",
         "market_shock",
         "currency_shock",
+        "sector_target",
+        "sector_shock",
+        "interest_rate_shock",
         "systematic_risk",
         "iterations_count",
         "created_at",

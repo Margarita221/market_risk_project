@@ -1,0 +1,267 @@
+{% extends "riskapp/base.html" %}
+{% load riskapp_i18n %}
+
+{% block title %}{% if ui_language == "ru" %}Сравнение стратегий{% else %}Strategy comparison{% endif %} | {% t "site_name" %}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="hero-meta">
+        <div class="hero-content">
+            <div class="section-kicker">{% if ui_language == "ru" %}Сравнение результатов{% else %}Result comparison{% endif %}</div>
+            <h1>{% if ui_language == "ru" %}Сценарии внутри одного портфеля{% else %}Scenarios inside one portfolio{% endif %}</h1>
+            <p class="muted">
+                {% if ui_language == "ru" %}
+                    Выбери портфель, затем отметь только те запуски моделирования, которые действительно нужно вывести на график и в таблицу метрик.
+                {% else %}
+                    Pick a portfolio, then mark only the simulation runs you want to keep on the chart and in the metric table.
+                {% endif %}
+            </p>
+        </div>
+        <div class="hero-spotlight">
+            <span class="pill">{% if ui_language == "ru" %}Результаты{% else %}Results{% endif %}</span>
+            <div class="eyebrow-value">{{ comparison_results|length }}</div>
+            <div class="metric-note">{% if ui_language == "ru" %}кривых в сравнении{% else %}curves compared{% endif %}</div>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <form method="get" class="form-card" style="gap: 12px; margin-top: 0;">
+        {{ form.non_field_errors }}
+        <div class="scenario-controls" style="grid-template-columns: minmax(0, 1fr) auto auto; align-items: end;">
+            <label class="wide" style="grid-column: span 1;">
+                {% if ui_language == "ru" %}Портфель{% else %}Portfolio{% endif %}
+                {{ form.portfolio }}
+                {{ form.portfolio.errors }}
+            </label>
+            <button type="submit" class="button button-primary">{% if ui_language == "ru" %}Показать{% else %}Show{% endif %}</button>
+            <a href="{% url 'riskapp:strategy_compare' %}" class="button button-ghost">{% if ui_language == "ru" %}Сбросить{% else %}Reset{% endif %}</a>
+        </div>
+    </form>
+</section>
+
+{% if selected_portfolio %}
+    <section class="grid">
+        <article class="card span-12" style="padding: 18px 20px;">
+            <div class="mini-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;">
+                <div class="mini-card" style="padding: 12px 14px;">
+                    <span class="section-kicker" style="margin-bottom: 8px;">{% if ui_language == "ru" %}Портфель{% else %}Portfolio{% endif %}</span>
+                    <strong style="font-size: 1.1rem; margin-top: 0;">{{ selected_portfolio.name }}</strong>
+                </div>
+                <div class="mini-card" style="padding: 12px 14px;">
+                    <span class="section-kicker" style="margin-bottom: 8px;">{% if ui_language == "ru" %}Доступно запусков{% else %}Runs available{% endif %}</span>
+                    <strong style="font-size: 1.1rem; margin-top: 0;">{{ available_results|length }}</strong>
+                </div>
+                <div class="mini-card" style="padding: 12px 14px;">
+                    <span class="section-kicker" style="margin-bottom: 8px;">{% if ui_language == "ru" %}Показано{% else %}Displayed{% endif %}</span>
+                    <strong style="font-size: 1.1rem; margin-top: 0;">{{ comparison_results|length }}</strong>
+                </div>
+            </div>
+        </article>
+
+        {% if available_results %}
+            <article class="card span-12">
+                <div class="card-header">
+                    <div>
+                        <div class="section-kicker">{% if ui_language == "ru" %}Выбор запусков{% else %}Run selection{% endif %}</div>
+                        <h2 style="font-size: 1.55rem;">{% if ui_language == "ru" %}Какие результаты включить в сравнение{% else %}Which results to include{% endif %}</h2>
+                    </div>
+                </div>
+                <form method="get" class="form-card" style="gap: 10px; margin-top: 12px;">
+                    <input type="hidden" name="portfolio" value="{{ selected_portfolio.id }}">
+                    <input type="hidden" name="selection_mode" value="custom">
+                    <div class="mini-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px;">
+                        {% for result_item in available_results %}
+                            <label class="mini-card" style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 12px 14px;">
+                                <input type="checkbox" name="results" value="{{ result_item.id }}" {% if result_item.checked %}checked{% endif %} style="margin-top: 3px; width: auto;">
+                                <span style="display: block; line-height: 1.35; font-size: 0.98rem;">{{ result_item.label }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="form-actions" style="margin-top: 6px;">
+                        <button type="submit" class="button button-primary">{% if ui_language == "ru" %}Показать выбранные{% else %}Show selected{% endif %}</button>
+                        <a href="{% url 'riskapp:strategy_compare' %}?portfolio={{ selected_portfolio.id }}" class="button button-ghost">{% if ui_language == "ru" %}Показать все{% else %}Show all{% endif %}</a>
+                    </div>
+                </form>
+            </article>
+        {% endif %}
+    </section>
+{% endif %}
+
+{% if comparison_results %}
+    <section class="grid">
+        <article class="card span-12">
+            <div class="card-header">
+                <div>
+                    <div class="section-kicker">{% if ui_language == "ru" %}График сравнения{% else %}Comparison chart{% endif %}</div>
+                    <h2>{% if ui_language == "ru" %}Нормализованная динамика выбранных результатов{% else %}Normalized dynamics of selected runs{% endif %}</h2>
+                </div>
+            </div>
+            {{ chart_series|json_script:"strategy-compare-chart-data" }}
+            <div class="chart-panel">
+                <div class="chart-frame">
+                    <canvas id="strategy-compare-chart" class="chart-canvas"></canvas>
+                    <div id="strategy-compare-tooltip" class="chart-tooltip"></div>
+                </div>
+            </div>
+            <p class="muted" style="margin-top: 10px;">
+                {% if ui_language == "ru" %}
+                    Все кривые приведены к собственному старту, поэтому удобно сравнивать форму движения и чувствительность к сценарию.
+                {% else %}
+                    All paths are normalized to their own start, so it is easier to compare shape and scenario sensitivity.
+                {% endif %}
+            </p>
+        </article>
+
+        <article class="card span-12">
+            <div class="card-header">
+                <div>
+                    <div class="section-kicker">{% if ui_language == "ru" %}Таблица метрик{% else %}Metrics table{% endif %}</div>
+                    <h2>{% if ui_language == "ru" %}Ключевые показатели по выбранным результатам{% else %}Key metrics for selected runs{% endif %}</h2>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>{% if ui_language == "ru" %}Метрика{% else %}Metric{% endif %}</th>
+                            {% for item in comparison_results %}
+                                <th>{{ item.selection_label }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in comparison_rows %}
+                            <tr>
+                                <td>{{ row.label }}</td>
+                                {% for value in row.values %}
+                                    <td>{{ value }}</td>
+                                {% endfor %}
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </article>
+    </section>
+
+    <script>
+        (() => {
+            const payload = JSON.parse(document.getElementById("strategy-compare-chart-data").textContent);
+            const canvas = document.getElementById("strategy-compare-chart");
+            const tooltip = document.getElementById("strategy-compare-tooltip");
+            if (!canvas || !payload.length) {
+                return;
+            }
+
+            const context = canvas.getContext("2d");
+            const padding = { top: 24, right: 28, bottom: 34, left: 68 };
+            const colors = payload.map((_, index) => `hsl(${(index * 67) % 360} 58% 44%)`);
+
+            const resizeCanvas = () => {
+                const ratio = window.devicePixelRatio || 1;
+                const rect = canvas.getBoundingClientRect();
+                canvas.width = rect.width * ratio;
+                canvas.height = rect.height * ratio;
+                context.setTransform(1, 0, 0, 1, 0, 0);
+                context.scale(ratio, ratio);
+            };
+
+            const values = payload.flatMap((item) => item.values);
+            const rawMin = Math.min(...values, 0);
+            const rawMax = Math.max(...values, 0);
+            const minValue = rawMin === rawMax ? rawMin - 1 : rawMin;
+            const maxValue = rawMin === rawMax ? rawMax + 1 : rawMax;
+            const range = maxValue - minValue || 1;
+
+            const buildPoint = (index, total, value, width, height) => ({
+                x: padding.left + ((total <= 1 ? 0 : index / (total - 1)) * (width - padding.left - padding.right)),
+                y: padding.top + (1 - ((value - minValue) / range)) * (height - padding.top - padding.bottom),
+            });
+
+            const drawAxes = (width, height) => {
+                context.strokeStyle = "rgba(23, 33, 27, 0.12)";
+                context.lineWidth = 1;
+                context.beginPath();
+                context.moveTo(padding.left, padding.top);
+                context.lineTo(padding.left, height - padding.bottom);
+                context.lineTo(width - padding.right, height - padding.bottom);
+                context.stroke();
+
+                context.fillStyle = "#5f655d";
+                context.font = "13px Georgia, serif";
+                for (let step = 0; step <= 4; step += 1) {
+                    const value = minValue + (range / 4) * step;
+                    const y = padding.top + (1 - step / 4) * (height - padding.top - padding.bottom);
+                    context.strokeStyle = "rgba(23, 33, 27, 0.08)";
+                    context.beginPath();
+                    context.moveTo(padding.left, y);
+                    context.lineTo(width - padding.right, y);
+                    context.stroke();
+                    context.fillText(`${value.toFixed(1)}%`, 10, y + 4);
+                }
+
+                context.textAlign = "center";
+                context.fillText("0", padding.left, height - 10);
+                context.fillText(String(Math.max(...payload.map((item) => item.values.length)) - 1), width - padding.right, height - 10);
+                context.textAlign = "left";
+            };
+
+            const draw = () => {
+                const rect = canvas.getBoundingClientRect();
+                context.clearRect(0, 0, rect.width, rect.height);
+                drawAxes(rect.width, rect.height);
+
+                payload.forEach((item, index) => {
+                    context.strokeStyle = colors[index];
+                    context.lineWidth = 2.4;
+                    context.beginPath();
+                    item.values.forEach((value, pointIndex) => {
+                        const point = buildPoint(pointIndex, item.values.length, value, rect.width, rect.height);
+                        if (pointIndex === 0) {
+                            context.moveTo(point.x, point.y);
+                        } else {
+                            context.lineTo(point.x, point.y);
+                        }
+                    });
+                    context.stroke();
+                });
+            };
+
+            const handleMove = (event) => {
+                const rect = canvas.getBoundingClientRect();
+                const usableWidth = rect.width - padding.left - padding.right;
+                const relativeX = Math.min(Math.max(event.clientX - rect.left - padding.left, 0), usableWidth);
+                const maxLength = Math.max(...payload.map((item) => item.values.length));
+                const pointIndex = Math.round((relativeX / usableWidth) * Math.max(maxLength - 1, 1));
+                tooltip.style.display = "block";
+                tooltip.style.left = `${event.clientX - rect.left + 16}px`;
+                tooltip.style.top = `${event.clientY - rect.top + 16}px`;
+                tooltip.innerHTML = payload.map((item, index) => {
+                    const value = item.values[Math.min(pointIndex, item.values.length - 1)] ?? 0;
+                    return `<div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${colors[index]};margin-right:6px;"></span>${item.label}: ${value.toFixed(2)}%</div>`;
+                }).join("");
+            };
+
+            resizeCanvas();
+            draw();
+            canvas.addEventListener("mousemove", handleMove);
+            canvas.addEventListener("mouseleave", () => {
+                tooltip.style.display = "none";
+            });
+            window.addEventListener("resize", () => {
+                resizeCanvas();
+                draw();
+            });
+        })();
+    </script>
+{% elif selected_portfolio and selection_submitted %}
+    <section class="card">
+        <div class="empty">{% if ui_language == "ru" %}Отметь хотя бы один результат, чтобы построить сравнение.{% else %}Select at least one result to build the comparison.{% endif %}</div>
+    </section>
+{% elif selected_portfolio %}
+    <section class="card">
+        <div class="empty">{% if ui_language == "ru" %}Для выбранного портфеля пока недостаточно результатов моделирования для сравнения.{% else %}The selected portfolio does not have enough simulation results to compare yet.{% endif %}</div>
+    </section>
+{% endif %}
+{% endblock %}

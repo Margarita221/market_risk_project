@@ -172,6 +172,34 @@ class ScenarioSimulationServiceTests(TestCase):
         position_paths = summary.result.chart_data["position_paths"]
         self.assertTrue(any(item["annual_income_yield_percent"] > 0 for item in position_paths))
 
+    def test_rebalancing_frequency_changes_portfolio_path(self):
+        self.instrument.dividend_yield = Decimal("0.000000")
+        self.instrument.save(update_fields=["dividend_yield"])
+        self.bond.coupon_yield = Decimal("0.000000")
+        self.bond.save(update_fields=["coupon_yield"])
+        self.scenario.trend = Decimal("0.120000")
+        self.scenario.volatility = Decimal("0.000000")
+        self.scenario.noise_level = Decimal("0.000000")
+        self.scenario.market_shock = Decimal("0.000000")
+        self.scenario.currency_shock = Decimal("0.000000")
+        self.scenario.inflation_shock = Decimal("0.000000")
+        self.scenario.interest_rate_shock = Decimal("0.000000")
+        self.scenario.systematic_risk = Decimal("0.000000")
+        self.scenario.mean_reversion_strength = Decimal("0.000000")
+        self.scenario.time_horizon = 360
+        self.scenario.iterations_count = 1
+        self.scenario.rebalancing_frequency = Scenario.REBALANCE_NONE
+        self.scenario.save()
+
+        hold_summary = run_scenario_simulation(self.scenario.id, seed=11)
+
+        self.scenario.rebalancing_frequency = Scenario.REBALANCE_MONTHLY
+        self.scenario.save(update_fields=["rebalancing_frequency"])
+        rebalance_summary = run_scenario_simulation(self.scenario.id, seed=11)
+
+        self.assertNotEqual(hold_summary.result.final_value, rebalance_summary.result.final_value)
+        self.assertEqual(rebalance_summary.result.chart_data["rebalancing_frequency"], Scenario.REBALANCE_MONTHLY)
+
 
 class HistoricalCalibrationServiceTests(TestCase):
     def setUp(self):
@@ -672,6 +700,7 @@ class RiskAppWebUiTests(TestCase):
             {
                 "preset": Scenario.PRESET_STRESS,
                 "portfolio": self.portfolio.id,
+                "rebalancing_frequency": Scenario.REBALANCE_MONTHLY,
                 "name": "Scenario from form",
                 "description": "Created from dedicated scenario form",
                 "trend": "0.025",
@@ -694,6 +723,7 @@ class RiskAppWebUiTests(TestCase):
         self.assertEqual(scenario.user, self.user)
         self.assertEqual(scenario.portfolio, self.portfolio)
         self.assertEqual(scenario.preset, Scenario.PRESET_STRESS)
+        self.assertEqual(scenario.rebalancing_frequency, Scenario.REBALANCE_MONTHLY)
         self.assertEqual(scenario.market_shock, Decimal("-0.010000"))
         self.assertEqual(scenario.currency_shock, Decimal("-0.020000"))
         self.assertEqual(scenario.sector_target, "Equities")
@@ -709,6 +739,7 @@ class RiskAppWebUiTests(TestCase):
             {
                 "preset": Scenario.PRESET_CUSTOM,
                 "portfolio": self.portfolio.id,
+                "rebalancing_frequency": Scenario.REBALANCE_QUARTERLY,
                 "name": "Updated scenario",
                 "description": "Updated scenario description",
                 "trend": "0.055",
@@ -729,6 +760,7 @@ class RiskAppWebUiTests(TestCase):
         self.scenario.refresh_from_db()
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.scenario.name, "Updated scenario")
+        self.assertEqual(self.scenario.rebalancing_frequency, Scenario.REBALANCE_QUARTERLY)
         self.assertEqual(self.scenario.time_horizon, 75)
         self.assertEqual(self.scenario.market_shock, Decimal("-0.020000"))
         self.assertEqual(self.scenario.currency_shock, Decimal("-0.030000"))

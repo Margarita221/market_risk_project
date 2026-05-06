@@ -117,6 +117,27 @@ def get_instrument_profile(position):
     )
 
 
+def get_initial_position_weights(positions, base_currency):
+    raw_values = []
+    total_value = Decimal("0")
+    for position in positions:
+        raw_position_start_value = Decimal(position.quantity) * Decimal(position.instrument.current_price)
+        converted_position_start_value = convert_amount(
+            raw_position_start_value,
+            position.instrument.currency,
+            base_currency,
+        )
+        if converted_position_start_value is None:
+            raise ValueError("Missing exchange rate for portfolio currency conversion.")
+        raw_values.append(converted_position_start_value)
+        total_value += converted_position_start_value
+
+    if total_value <= 0:
+        raise ValueError("Portfolio has no positive current value to simulate.")
+
+    return [float(value / total_value) for value in raw_values]
+
+
 def get_currency_multiplier(position, currency_shock, base_currency):
     if normalize_currency_code(position.instrument.currency) == normalize_currency_code(base_currency):
         return 0.0
@@ -157,6 +178,39 @@ def build_shock_weights(steps):
 
 def clamp(value, minimum, maximum):
     return max(minimum, min(value, maximum))
+
+
+def get_rebalance_interval_steps(rebalancing_frequency, step_days):
+    if rebalancing_frequency == Scenario.REBALANCE_MONTHLY:
+        return max(1, round(30 / step_days))
+    if rebalancing_frequency == Scenario.REBALANCE_QUARTERLY:
+        return max(1, round(90 / step_days))
+    return None
+
+
+def apply_rebalancing(position_paths, target_weights, interval_steps):
+    if not interval_steps or interval_steps <= 0 or not position_paths:
+        return
+
+    path_length = len(position_paths[0])
+    rebalance_indexes = range(interval_steps, path_length, interval_steps)
+    for rebalance_index in rebalance_indexes:
+        total_value = sum(path[rebalance_index] for path in position_paths)
+        if total_value <= 0:
+            continue
+        for path, target_weight in zip(position_paths, target_weights):
+            current_value = path[rebalance_index]
+            target_value = total_value * target_weight
+            if current_value <= 0:
+                replacement = [0.0] * (path_length - rebalance_index)
+                for offset, value in enumerate(replacement):
+                    path[rebalance_index + offset] = value
+                if target_value > 0:
+                    path[rebalance_index] = target_value
+                continue
+            scale_factor = target_value / current_value
+            for tail_index in range(rebalance_index, path_length):
+                path[tail_index] *= scale_factor
 
 
 def build_instrument_path(
@@ -249,11 +303,14 @@ def run_scenario_simulation(scenario_id, seed=None):
     interest_rate_shock = float(scenario.interest_rate_shock)
     systematic_risk = float(scenario.systematic_risk)
     mean_reversion_strength = float(scenario.mean_reversion_strength)
+    rebalancing_frequency = scenario.rebalancing_frequency or Scenario.REBALANCE_NONE
     steps = max(1, ceil(float(scenario.time_horizon) / step_days))
     iterations_count = int(scenario.iterations_count)
     start_value_float = float(start_value)
     generator = random.Random(seed)
     base_currency = normalize_currency_code(scenario.portfolio.base_currency)
+    target_weights = get_initial_position_weights(positions, base_currency)
+    rebalance_interval_steps = get_rebalance_interval_steps(rebalancing_frequency, step_days)
 
     final_values = []
     iteration_returns = []
@@ -307,6 +364,7 @@ def run_scenario_simulation(scenario_id, seed=None):
             if position.id not in position_sample_paths:
                 position_sample_paths[position.id] = position_path
 
+        apply_rebalancing(position_paths, target_weights, rebalance_interval_steps)
         portfolio_path = combine_paths(position_paths)
         final_value = portfolio_path[-1]
         final_values.append(final_value)
@@ -398,7 +456,8 @@ def run_scenario_simulation(scenario_id, seed=None):
             f"with mean reversion {quantize_decimal(mean_reversion_strength, Decimal('0.0001'))}, "
             f"sector shock {quantize_decimal(sector_shock)} for sector '{sector_target or 'all'}', "
             f"interest-rate shock {quantize_decimal(interest_rate_shock)} for bonds, "
-            f"and annual income yields from coupons or dividends."
+            f"annual income yields from coupons or dividends, "
+            f"and rebalancing mode '{rebalancing_frequency}'."
         ),
         chart_data={
             "labels": format_chart_labels(len(average_path), step_days),
@@ -430,6 +489,7 @@ def run_scenario_simulation(scenario_id, seed=None):
             "interest_rate_shock_percent": float(quantize_decimal(interest_rate_shock * 100)),
             "systematic_risk_percent": float(quantize_decimal(systematic_risk * 100)),
             "mean_reversion_strength_percent": float(quantize_decimal(mean_reversion_strength * 100)),
+            "rebalancing_frequency": rebalancing_frequency,
             "base_currency": base_currency,
             "steps": steps,
             "iterations": iterations_count,

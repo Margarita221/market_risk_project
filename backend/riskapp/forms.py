@@ -116,6 +116,7 @@ def validate_scenario_numeric_limits(cleaned_data, language):
 SCENARIO_FIELD_WIDGETS = {
     "description": forms.Textarea(attrs={"rows": 3}),
     "preset": forms.Select(),
+    "rebalancing_frequency": forms.Select(),
     "trend": forms.NumberInput(attrs={
         "step": "0.01",
         "min": "-0.3",
@@ -225,6 +226,7 @@ SCENARIO_FIELD_WIDGETS = {
 
 SCENARIO_PRESETS = {
     Scenario.PRESET_BASE: {
+        "rebalancing_frequency": Scenario.REBALANCE_NONE,
         "trend": "0.060000",
         "volatility": "0.120000",
         "noise_level": "0.015000",
@@ -241,6 +243,7 @@ SCENARIO_PRESETS = {
         "iterations_count": 500,
     },
     Scenario.PRESET_OPTIMISTIC: {
+        "rebalancing_frequency": Scenario.REBALANCE_NONE,
         "trend": "0.120000",
         "volatility": "0.140000",
         "noise_level": "0.015000",
@@ -257,6 +260,7 @@ SCENARIO_PRESETS = {
         "iterations_count": 700,
     },
     Scenario.PRESET_PESSIMISTIC: {
+        "rebalancing_frequency": Scenario.REBALANCE_NONE,
         "trend": "-0.030000",
         "volatility": "0.180000",
         "noise_level": "0.020000",
@@ -273,6 +277,7 @@ SCENARIO_PRESETS = {
         "iterations_count": 700,
     },
     Scenario.PRESET_STRESS: {
+        "rebalancing_frequency": Scenario.REBALANCE_NONE,
         "trend": "-0.070000",
         "volatility": "0.280000",
         "noise_level": "0.040000",
@@ -289,6 +294,7 @@ SCENARIO_PRESETS = {
         "iterations_count": 900,
     },
     Scenario.PRESET_CRISIS: {
+        "rebalancing_frequency": Scenario.REBALANCE_NONE,
         "trend": "-0.120000",
         "volatility": "0.400000",
         "noise_level": "0.060000",
@@ -707,6 +713,7 @@ class ScenarioForm(forms.ModelForm):
         apply_scenario_display_precision(self)
         for field_name in (
             "preset",
+            "rebalancing_frequency",
             "market_shock",
             "currency_shock",
             "inflation_shock",
@@ -723,6 +730,7 @@ class ScenarioForm(forms.ModelForm):
         model = Scenario
         fields = [
             "preset",
+            "rebalancing_frequency",
             "name",
             "description",
             "trend",
@@ -745,6 +753,7 @@ class ScenarioForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         preset = cleaned_data.get("preset") or Scenario.PRESET_BASE
+        cleaned_data["rebalancing_frequency"] = cleaned_data.get("rebalancing_frequency") or Scenario.REBALANCE_NONE
         cleaned_data["preset"] = preset
         self.cleaned_data["preset"] = preset
         cleaned_data["market_shock"] = cleaned_data.get("market_shock") or Decimal("0")
@@ -779,6 +788,7 @@ class ScenarioManagementForm(forms.ModelForm):
             self.fields["portfolio"].queryset = portfolios_queryset.order_by("name")
         for field_name in (
             "preset",
+            "rebalancing_frequency",
             "market_shock",
             "currency_shock",
             "inflation_shock",
@@ -796,6 +806,7 @@ class ScenarioManagementForm(forms.ModelForm):
         fields = [
             "portfolio",
             "preset",
+            "rebalancing_frequency",
             "name",
             "description",
             "trend",
@@ -818,6 +829,7 @@ class ScenarioManagementForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         preset = cleaned_data.get("preset") or Scenario.PRESET_BASE
+        cleaned_data["rebalancing_frequency"] = cleaned_data.get("rebalancing_frequency") or Scenario.REBALANCE_NONE
         cleaned_data["preset"] = preset
         self.cleaned_data["preset"] = preset
         cleaned_data["market_shock"] = cleaned_data.get("market_shock") or Decimal("0")

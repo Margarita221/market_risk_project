@@ -278,10 +278,19 @@ class Scenario(models.Model):
         (PRESET_STRESS, "Stress"),
         (PRESET_CRISIS, "Crisis"),
     ]
+    REBALANCE_NONE = "none"
+    REBALANCE_MONTHLY = "monthly"
+    REBALANCE_QUARTERLY = "quarterly"
+    REBALANCING_CHOICES = [
+        (REBALANCE_NONE, "Buy and hold"),
+        (REBALANCE_MONTHLY, "Monthly rebalance"),
+        (REBALANCE_QUARTERLY, "Quarterly rebalance"),
+    ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="scenarios")
     portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE, related_name="scenarios")
     preset = models.CharField(max_length=20, choices=PRESET_CHOICES, default=PRESET_CUSTOM)
+    rebalancing_frequency = models.CharField(max_length=20, choices=REBALANCING_CHOICES, default=REBALANCE_NONE)
     name = models.CharField(max_length=150)
     description = models.TextField(blank=True)
     trend = models.DecimalField(max_digits=10, decimal_places=6)

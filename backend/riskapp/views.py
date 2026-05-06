@@ -199,6 +199,11 @@ def localize_metric(metric, language, portfolio_unit_label=None):
 def build_result_notes(result, language):
     chart_data = result.chart_data or {}
     scenario = result.scenario
+    rebalancing_labels = {
+        Scenario.REBALANCE_NONE: localized_text(language, "buy-and-hold без ребалансировки", "buy-and-hold with no rebalancing"),
+        Scenario.REBALANCE_MONTHLY: localized_text(language, "ежемесячная ребалансировка", "monthly rebalancing"),
+        Scenario.REBALANCE_QUARTERLY: localized_text(language, "квартальная ребалансировка", "quarterly rebalancing"),
+    }
     return [
         translate(
             "run_note_iterations_steps",
@@ -207,6 +212,7 @@ def build_result_notes(result, language):
             steps=chart_data.get("steps", "-"),
         ),
         translate("scenario_preset", language) + f": {scenario.get_preset_display()}.",
+        localized_text(language, "Режим стратегии", "Strategy mode") + f": {rebalancing_labels.get(scenario.rebalancing_frequency, scenario.get_rebalancing_frequency_display())}.",
         translate(
             "run_note_chart_consistency",
             language,

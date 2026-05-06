@@ -155,6 +155,7 @@ class ScenarioAdmin(admin.ModelAdmin):
         "user",
         "portfolio",
         "preset",
+        "rebalancing_frequency",
         "trend",
         "volatility",
         "market_shock",

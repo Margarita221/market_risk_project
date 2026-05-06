@@ -139,6 +139,7 @@
                             <th>{% t "market_shock" %}</th>
                             <th>{% t "currency_shock" %}</th>
                             <th>{% t "interest_rate_shock" %}</th>
+                            <th>{% if ui_language == "ru" %}Ребалансировка{% else %}Rebalancing{% endif %}</th>
                             <th>{% t "horizon" %}</th>
                             <th>{% t "iterations" %}</th>
                             <th>{% t "results" %}</th>
@@ -161,6 +162,7 @@
                                 <td>{{ scenario.market_shock|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
                                 <td>{{ scenario.currency_shock|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
                                 <td>{{ scenario.interest_rate_shock|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
+                                <td>{{ scenario.get_rebalancing_frequency_display }}</td>
                                 <td>{{ scenario.time_horizon }} <span class="inline-unit">{% t "unit_days" %}</span></td>
                                 <td>{{ scenario.iterations_count }} <span class="inline-unit">{% t "unit_iterations" %}</span></td>
                                 <td><span class="pill">{{ scenario.results_count }}</span></td>

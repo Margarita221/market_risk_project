@@ -102,6 +102,18 @@
                 {{ form.name.errors }}
             </label>
             <label>
+                {% if ui_language == "ru" %}Стратегия ребалансировки{% else %}Rebalancing strategy{% endif %}
+                {{ form.rebalancing_frequency }}
+                <small class="muted">
+                    {% if ui_language == "ru" %}
+                        Buy and hold оставляет доли портфеля естественно изменяться, а периодическая ребалансировка возвращает их к стартовой структуре.
+                    {% else %}
+                        Buy and hold lets weights drift naturally, while periodic rebalancing restores the starting allocation.
+                    {% endif %}
+                </small>
+                {{ form.rebalancing_frequency.errors }}
+            </label>
+            <label>
                 {% t "description" %}
                 {{ form.description }}
                 {{ form.description.errors }}
@@ -206,11 +218,11 @@
 <script>
     (() => {
         const presetValues = {
-            base: { trend: "0.060000", volatility: "0.120000", noise_level: "0.015000", market_shock: "0.000000", currency_shock: "0.000000", inflation_shock: "0.050000", sector_target: "", sector_shock: "0.000000", interest_rate_shock: "0.000000", systematic_risk: "0.5500", mean_reversion_strength: "0.1200", time_horizon: "365", time_step: "1.0000", iterations_count: "500" },
-            optimistic: { trend: "0.120000", volatility: "0.140000", noise_level: "0.015000", market_shock: "0.030000", currency_shock: "0.020000", inflation_shock: "0.030000", sector_target: "Equities", sector_shock: "0.020000", interest_rate_shock: "-0.010000", systematic_risk: "0.5000", mean_reversion_strength: "0.1000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
-            pessimistic: { trend: "-0.030000", volatility: "0.180000", noise_level: "0.020000", market_shock: "-0.040000", currency_shock: "-0.030000", inflation_shock: "0.070000", sector_target: "Equities", sector_shock: "-0.040000", interest_rate_shock: "0.015000", systematic_risk: "0.6000", mean_reversion_strength: "0.1500", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
-            stress: { trend: "-0.070000", volatility: "0.280000", noise_level: "0.040000", market_shock: "-0.080000", currency_shock: "-0.060000", inflation_shock: "0.100000", sector_target: "Equities", sector_shock: "-0.070000", interest_rate_shock: "0.030000", systematic_risk: "0.7500", mean_reversion_strength: "0.1800", time_horizon: "240", time_step: "1.0000", iterations_count: "900" },
-            crisis: { trend: "-0.120000", volatility: "0.400000", noise_level: "0.060000", market_shock: "-0.150000", currency_shock: "-0.100000", inflation_shock: "0.140000", sector_target: "Equities", sector_shock: "-0.120000", interest_rate_shock: "0.050000", systematic_risk: "0.8800", mean_reversion_strength: "0.2200", time_horizon: "180", time_step: "1.0000", iterations_count: "1000" }
+            base: { rebalancing_frequency: "none", trend: "0.060000", volatility: "0.120000", noise_level: "0.015000", market_shock: "0.000000", currency_shock: "0.000000", inflation_shock: "0.050000", sector_target: "", sector_shock: "0.000000", interest_rate_shock: "0.000000", systematic_risk: "0.5500", mean_reversion_strength: "0.1200", time_horizon: "365", time_step: "1.0000", iterations_count: "500" },
+            optimistic: { rebalancing_frequency: "none", trend: "0.120000", volatility: "0.140000", noise_level: "0.015000", market_shock: "0.030000", currency_shock: "0.020000", inflation_shock: "0.030000", sector_target: "Equities", sector_shock: "0.020000", interest_rate_shock: "-0.010000", systematic_risk: "0.5000", mean_reversion_strength: "0.1000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
+            pessimistic: { rebalancing_frequency: "none", trend: "-0.030000", volatility: "0.180000", noise_level: "0.020000", market_shock: "-0.040000", currency_shock: "-0.030000", inflation_shock: "0.070000", sector_target: "Equities", sector_shock: "-0.040000", interest_rate_shock: "0.015000", systematic_risk: "0.6000", mean_reversion_strength: "0.1500", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
+            stress: { rebalancing_frequency: "none", trend: "-0.070000", volatility: "0.280000", noise_level: "0.040000", market_shock: "-0.080000", currency_shock: "-0.060000", inflation_shock: "0.100000", sector_target: "Equities", sector_shock: "-0.070000", interest_rate_shock: "0.030000", systematic_risk: "0.7500", mean_reversion_strength: "0.1800", time_horizon: "240", time_step: "1.0000", iterations_count: "900" },
+            crisis: { rebalancing_frequency: "none", trend: "-0.120000", volatility: "0.400000", noise_level: "0.060000", market_shock: "-0.150000", currency_shock: "-0.100000", inflation_shock: "0.140000", sector_target: "Equities", sector_shock: "-0.120000", interest_rate_shock: "0.050000", systematic_risk: "0.8800", mean_reversion_strength: "0.2200", time_horizon: "180", time_step: "1.0000", iterations_count: "1000" }
         };
 
         document.querySelectorAll(".scenario-form input[data-slider-min]").forEach((numberInput) => {

@@ -89,7 +89,7 @@
                                     <strong>{{ position.instrument.ticker }}</strong><br>
                                     <span class="muted">{{ position.instrument.name }}</span>
                                 </td>
-                                <td>{{ position.instrument.instrument_type }}</td>
+                                <td>{% instrument_type_label position.instrument.instrument_type %}</td>
                                 <td>{{ position.instrument.currency }}</td>
                                 <td>{{ position.quantity }}</td>
                                 <td>{{ position.average_purchase_price|money_by_currency:position.instrument.currency }} <span class="inline-unit">{{ position.instrument.currency }}</span></td>

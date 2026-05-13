@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from statistics import mean
 from unittest.mock import patch
 
 from django.core import mail
@@ -23,9 +24,14 @@ from riskapp.models import (
     SimulationResult,
     TradeOperation,
 )
-from riskapp.services.moex import fetch_market_snapshot, sync_moex_instruments, sync_moex_price_history
+from riskapp.services.moex import fetch_market_snapshot, iter_market_snapshots, sync_moex_instruments, sync_moex_price_history
 from riskapp.services.historical_calibration import calibrate_portfolio_scenario_parameters
-from riskapp.services.portfolio_operations import estimate_trade_commission, record_trade_operation
+from riskapp.services.portfolio_operations import (
+    estimate_trade_commission,
+    estimate_trade_execution_price,
+    get_portfolio_cash_snapshot,
+    record_trade_operation,
+)
 from riskapp.services.simulation import run_scenario_simulation
 
 
@@ -199,6 +205,135 @@ class ScenarioSimulationServiceTests(TestCase):
 
         self.assertNotEqual(hold_summary.result.final_value, rebalance_summary.result.final_value)
         self.assertEqual(rebalance_summary.result.chart_data["rebalancing_frequency"], Scenario.REBALANCE_MONTHLY)
+        self.assertTrue(rebalance_summary.result.chart_data["rebalancing_marker_days"])
+        self.assertEqual(rebalance_summary.result.chart_data["rebalancing_marker_days"][0], 30)
+
+    def test_jump_component_adds_rare_discrete_moves(self):
+        self.instrument.dividend_yield = Decimal("0.000000")
+        self.instrument.save(update_fields=["dividend_yield"])
+        self.bond.coupon_yield = Decimal("0.000000")
+        self.bond.save(update_fields=["coupon_yield"])
+        self.scenario.trend = Decimal("0.000000")
+        self.scenario.volatility = Decimal("0.000000")
+        self.scenario.noise_level = Decimal("0.000000")
+        self.scenario.market_shock = Decimal("0.000000")
+        self.scenario.currency_shock = Decimal("0.000000")
+        self.scenario.inflation_shock = Decimal("0.000000")
+        self.scenario.interest_rate_shock = Decimal("0.000000")
+        self.scenario.systematic_risk = Decimal("0.000000")
+        self.scenario.mean_reversion_strength = Decimal("0.000000")
+        self.scenario.time_horizon = 360
+        self.scenario.time_step = Decimal("30.0000")
+        self.scenario.iterations_count = 1
+        self.scenario.jump_intensity = Decimal("0.000")
+        self.scenario.jump_magnitude = Decimal("0.100000")
+        self.scenario.save()
+
+        no_jump_summary = run_scenario_simulation(self.scenario.id, seed=3)
+
+        self.scenario.jump_intensity = Decimal("5.000")
+        self.scenario.save(update_fields=["jump_intensity"])
+        jump_summary = run_scenario_simulation(self.scenario.id, seed=3)
+
+        self.assertNotEqual(no_jump_summary.result.final_value, jump_summary.result.final_value)
+        self.assertGreater(jump_summary.result.chart_data["average_jump_events"], 0)
+        self.assertEqual(jump_summary.result.chart_data["jump_magnitude_percent"], 10.0)
+
+    def test_same_sector_assets_move_closer_than_cross_sector_assets(self):
+        reference_stock = Instrument.objects.create(
+            ticker="BASE",
+            name="Reference stock",
+            instrument_type="stock",
+            sector="Equities",
+            currency="RUB",
+            current_price=Decimal("100.0000"),
+        )
+        same_sector_peer = Instrument.objects.create(
+            ticker="ALLY",
+            name="Sector peer stock",
+            instrument_type="stock",
+            sector="Equities",
+            currency="RUB",
+            current_price=Decimal("100.0000"),
+        )
+        different_sector_stock = Instrument.objects.create(
+            ticker="INDX",
+            name="Different sector stock",
+            instrument_type="stock",
+            sector="Industrials",
+            currency="RUB",
+            current_price=Decimal("100.0000"),
+        )
+        correlation_portfolio = Portfolio.objects.create(
+            user=self.user,
+            name="Correlation portfolio",
+            base_currency="RUB",
+            initial_value=Decimal("0.00"),
+        )
+        PortfolioPosition.objects.create(
+            portfolio=correlation_portfolio,
+            instrument=reference_stock,
+            quantity=5,
+            average_purchase_price=Decimal("100.0000"),
+        )
+        PortfolioPosition.objects.create(
+            portfolio=correlation_portfolio,
+            instrument=same_sector_peer,
+            quantity=5,
+            average_purchase_price=Decimal("100.0000"),
+        )
+        PortfolioPosition.objects.create(
+            portfolio=correlation_portfolio,
+            instrument=different_sector_stock,
+            quantity=5,
+            average_purchase_price=Decimal("100.0000"),
+        )
+        correlation_scenario = Scenario.objects.create(
+            user=self.user,
+            portfolio=correlation_portfolio,
+            name="Correlation scenario",
+            preset=Scenario.PRESET_CUSTOM,
+            trend=Decimal("0.000000"),
+            volatility=Decimal("0.180000"),
+            noise_level=Decimal("0.000000"),
+            market_shock=Decimal("0.000000"),
+            currency_shock=Decimal("0.000000"),
+            inflation_shock=Decimal("0.000000"),
+            sector_target="",
+            sector_shock=Decimal("0.000000"),
+            interest_rate_shock=Decimal("0.000000"),
+            systematic_risk=Decimal("1.0000"),
+            mean_reversion_strength=Decimal("0.000000"),
+            time_horizon=90,
+            time_step=Decimal("1.0000"),
+            iterations_count=8,
+            rebalancing_frequency=Scenario.REBALANCE_NONE,
+        )
+        same_sector_gaps = []
+        cross_sector_gaps = []
+        last_summary = None
+
+        for seed in (5, 11, 17, 23, 29):
+            summary = run_scenario_simulation(correlation_scenario.id, seed=seed)
+            position_metrics = {
+                item["ticker"]: item["average_values"]
+                for item in summary.result.chart_data["position_paths"]
+            }
+            same_sector_gaps.append(mean(
+                abs(a - b)
+                for a, b in zip(position_metrics["ALLY"], position_metrics["BASE"])
+            ))
+            cross_sector_gaps.append(mean(
+                abs(a - b)
+                for a, b in zip(position_metrics["INDX"], position_metrics["BASE"])
+            ))
+            last_summary = summary
+
+        self.assertLess(mean(same_sector_gaps), mean(cross_sector_gaps))
+        self.assertEqual(
+            last_summary.result.chart_data["shared_factor_mix_percent"]["market"],
+            55.0,
+        )
 
 
 class HistoricalCalibrationServiceTests(TestCase):
@@ -336,7 +471,11 @@ class TradeOperationServiceTests(TestCase):
         self.assertEqual(TradeOperation.objects.count(), 2)
         self.assertEqual(operation.operation_type, TradeOperation.TYPE_BUY)
         self.assertEqual(position.quantity, 15)
-        self.assertEqual(position.average_purchase_price.quantize(Decimal("1.0000")), Decimal("121.0000"))
+        self.assertGreater(position.average_purchase_price, Decimal("121.0000"))
+        self.assertEqual(operation.quoted_price, Decimal("160.0000"))
+        self.assertGreater(operation.price_per_unit, operation.quoted_price)
+        self.assertGreater(operation.slippage_amount, Decimal("0"))
+        self.assertLess(operation.cash_balance_after, Decimal("0"))
 
     def test_sell_operation_reduces_position_and_stores_realized_pnl(self):
         record_trade_operation(
@@ -361,7 +500,17 @@ class TradeOperationServiceTests(TestCase):
 
         position.refresh_from_db()
         self.assertEqual(position.quantity, 6)
-        self.assertEqual(operation.realized_pnl, Decimal("72.0000"))
+        self.assertLess(operation.price_per_unit, operation.quoted_price)
+        self.assertGreater(operation.slippage_amount, Decimal("0"))
+        buy_operation = TradeOperation.objects.filter(
+            portfolio=self.portfolio,
+            instrument=self.instrument,
+            operation_type=TradeOperation.TYPE_BUY,
+        ).earliest("created_at")
+        self.assertEqual(
+            operation.realized_pnl,
+            (Decimal("4") * operation.price_per_unit) - Decimal("8.0000") - (Decimal("4") * buy_operation.price_per_unit),
+        )
 
     def test_cannot_sell_more_than_available_quantity(self):
         record_trade_operation(
@@ -385,6 +534,25 @@ class TradeOperationServiceTests(TestCase):
                 commission=Decimal("0.0000"),
             )
 
+    def test_cash_snapshot_uses_trade_journal_and_marks_legacy_positions_as_estimated(self):
+        legacy_portfolio = Portfolio.objects.create(
+            user=self.user,
+            name="Legacy portfolio",
+            base_currency="RUB",
+            initial_value=Decimal("5000.00"),
+        )
+        PortfolioPosition.objects.create(
+            portfolio=legacy_portfolio,
+            instrument=self.instrument,
+            quantity=10,
+            average_purchase_price=Decimal("100.0000"),
+        )
+
+        snapshot = get_portfolio_cash_snapshot(legacy_portfolio)
+
+        self.assertFalse(snapshot.reliable)
+        self.assertEqual(snapshot.balance, Decimal("4000.00"))
+
 
 class MoexImportServiceTests(TestCase):
     @patch("riskapp.services.moex._fetch_json")
@@ -407,6 +575,43 @@ class MoexImportServiceTests(TestCase):
         self.assertEqual(rows[0]["name"], "Sberbank")
         self.assertEqual(rows[0]["currency"], "RUB")
         self.assertEqual(rows[0]["current_price"], Decimal("312.45"))
+
+    @patch("riskapp.services.moex._fetch_json")
+    def test_iter_market_snapshots_loads_etf_from_equity_boards(self, mocked_fetch):
+        empty_payload = {
+            "securities": {
+                "columns": ["SECID", "SHORTNAME", "FACEUNIT"],
+                "data": [],
+            },
+            "marketdata": {
+                "columns": ["SECID", "LAST", "MARKETPRICE"],
+                "data": [],
+            },
+        }
+        etf_payload = {
+            "securities": {
+                "columns": ["SECID", "SHORTNAME", "FACEUNIT"],
+                "data": [["FXIT", "FinEx IT ETF", "SUR"]],
+            },
+            "marketdata": {
+                "columns": ["SECID", "LAST", "MARKETPRICE"],
+                "data": [["FXIT", 101.75, None]],
+            },
+        }
+
+        def fake_fetch(path, params=None):
+            if "/markets/shares/boards/TQTF/securities.json" in path:
+                return etf_payload
+            return empty_payload
+
+        mocked_fetch.side_effect = fake_fetch
+
+        rows = list(iter_market_snapshots(["etf"], limit_per_market=10))
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], "etf")
+        self.assertEqual(rows[0][1]["ticker"], "FXIT")
+        self.assertEqual(rows[0][1]["current_price"], Decimal("101.75"))
 
     @patch("riskapp.services.moex._fetch_json")
     def test_sync_moex_price_history_imports_historical_rows(self, mocked_fetch):
@@ -438,6 +643,48 @@ class MoexImportServiceTests(TestCase):
         )
         first_row = InstrumentPriceHistory.objects.filter(instrument=instrument, source="MOEX_HISTORY").earliest("captured_at")
         self.assertEqual(str(first_row.captured_at.date()), "2026-04-25")
+
+    @patch("riskapp.services.moex._fetch_json")
+    def test_sync_moex_price_history_imports_etf_rows_from_equity_board_history(self, mocked_fetch):
+        instrument = Instrument.objects.create(
+            ticker="FXIT",
+            name="FinEx IT ETF",
+            instrument_type="etf",
+            sector="Funds",
+            currency="RUB",
+            current_price=Decimal("101.7500"),
+        )
+        empty_payload = {
+            "history": {
+                "columns": ["TRADEDATE", "CLOSE", "BOARDID"],
+                "data": [],
+            },
+        }
+        etf_payload = {
+            "history": {
+                "columns": ["TRADEDATE", "CLOSE", "BOARDID"],
+                "data": [
+                    ["2026-04-25", 100.25, "TQTF"],
+                    ["2026-04-26", 101.10, "TQTF"],
+                ],
+            },
+        }
+
+        def fake_fetch(path, params=None):
+            if "/history/engines/stock/markets/shares/boards/TQTF/securities/FXIT.json" in path:
+                return etf_payload
+            return empty_payload
+
+        mocked_fetch.side_effect = fake_fetch
+
+        stats = sync_moex_price_history(instruments=[instrument], lookback_days=30)
+
+        self.assertEqual(stats.instruments, 1)
+        self.assertEqual(stats.imported, 2)
+        self.assertEqual(
+            InstrumentPriceHistory.objects.filter(instrument=instrument, source="MOEX_HISTORY").count(),
+            2,
+        )
 
     @patch("riskapp.services.moex._fetch_json")
     def test_sync_moex_price_history_skips_existing_dates_without_replace(self, mocked_fetch):
@@ -869,12 +1116,15 @@ class RiskAppWebUiTests(TestCase):
 
         position = PortfolioPosition.objects.get(portfolio=portfolio, instrument=self.instrument)
         operation = TradeOperation.objects.get(portfolio=portfolio, instrument=self.instrument)
-        expected_commission = estimate_trade_commission(3, self.instrument.current_price)
+        execution_price, _ = estimate_trade_execution_price(self.instrument, TradeOperation.TYPE_BUY, self.instrument.current_price, 3)
+        expected_commission = estimate_trade_commission(3, execution_price)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(position.quantity, 3)
-        self.assertEqual(position.average_purchase_price, (Decimal("3") * self.instrument.current_price + expected_commission) / Decimal("3"))
+        expected_average_price = (((Decimal("3") * execution_price) + expected_commission) / Decimal("3")).quantize(Decimal("1.0000"))
+        self.assertEqual(position.average_purchase_price, expected_average_price)
         self.assertEqual(operation.operation_type, TradeOperation.TYPE_BUY)
         self.assertEqual(operation.commission, expected_commission)
+        self.assertEqual(operation.quoted_price, self.instrument.current_price)
 
     def test_user_can_update_portfolio_from_web(self):
         self.client.force_login(self.user)
@@ -947,12 +1197,13 @@ class RiskAppWebUiTests(TestCase):
             instrument=self.instrument,
             operation_type=TradeOperation.TYPE_SELL,
         ).latest("created_at")
-        expected_commission = estimate_trade_commission(4, self.instrument.current_price)
+        execution_price, _ = estimate_trade_execution_price(self.instrument, TradeOperation.TYPE_SELL, self.instrument.current_price, 4)
+        expected_commission = estimate_trade_commission(4, execution_price)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(position.quantity, 6)
         self.assertEqual(self.portfolio.current_value, Decimal("27000.00"))
         self.assertEqual(sell_operation.commission, expected_commission)
-        self.assertEqual(sell_operation.realized_pnl, (Decimal("4") * self.instrument.current_price) - expected_commission - (Decimal("4") * Decimal("45.0000")))
+        self.assertEqual(sell_operation.realized_pnl, (Decimal("4") * execution_price) - expected_commission - (Decimal("4") * Decimal("45.0000")))
 
     def test_user_cannot_sell_more_than_owned_via_operation_form(self):
         self.client.force_login(self.user)
@@ -1401,6 +1652,21 @@ RiskAppWebUiTests.test_signup_creates_inactive_user_and_sends_activation_email =
 RiskAppWebUiTests.test_strategy_compare_can_filter_selected_results = _test_strategy_compare_can_filter_selected_results
 
 
+def _test_user_can_delete_simulation_result(self):
+    self.client.force_login(self.user)
+    summary = run_scenario_simulation(self.scenario.id, seed=23)
+
+    response = self.client.post(
+        reverse("riskapp:result_delete", args=[summary.result.id]),
+    )
+
+    self.assertEqual(response.status_code, 302)
+    self.assertFalse(SimulationResult.objects.filter(id=summary.result.id).exists())
+
+
+RiskAppWebUiTests.test_user_can_delete_simulation_result = _test_user_can_delete_simulation_result
+
+
 def _test_scenario_create_can_calibrate_from_history(self):
     self.client.force_login(self.user)
     historical_prices = [
@@ -1458,3 +1724,66 @@ def _test_scenario_create_can_calibrate_from_history(self):
 
 
 RiskAppWebUiTests.test_scenario_create_can_calibrate_from_history = _test_scenario_create_can_calibrate_from_history
+
+
+def _test_result_export_word_and_excel(self):
+    self.client.force_login(self.user)
+    summary = run_scenario_simulation(self.scenario.id, seed=31)
+
+    word_response = self.client.get(
+        reverse("riskapp:result_export", args=[summary.result.id, "word"])
+    )
+    excel_response = self.client.get(
+        reverse("riskapp:result_export", args=[summary.result.id, "excel"])
+    )
+
+    self.assertEqual(word_response.status_code, 200)
+    self.assertIn("application/msword", word_response["Content-Type"])
+    self.assertIn(".doc", word_response["Content-Disposition"])
+    self.assertContains(word_response, self.scenario.name)
+
+    self.assertEqual(excel_response.status_code, 200)
+    self.assertIn("application/vnd.ms-excel", excel_response["Content-Type"])
+    self.assertIn(".xls", excel_response["Content-Disposition"])
+    self.assertContains(excel_response, self.scenario.name)
+
+
+def _test_strategy_compare_export_word(self):
+    self.client.force_login(self.user)
+    second_scenario = Scenario.objects.create(
+        user=self.user,
+        portfolio=self.portfolio,
+        name="Second scenario",
+        trend=Decimal("0.015000"),
+        volatility=Decimal("0.050000"),
+        noise_level=Decimal("0.003000"),
+        market_shock=Decimal("0.000000"),
+        currency_shock=Decimal("0.000000"),
+        sector_target="",
+        sector_shock=Decimal("0.000000"),
+        interest_rate_shock=Decimal("0.000000"),
+        systematic_risk=Decimal("0.5000"),
+        time_horizon=30,
+        time_step=Decimal("1.0000"),
+        iterations_count=15,
+    )
+    first_summary = run_scenario_simulation(self.scenario.id, seed=41)
+    second_summary = run_scenario_simulation(second_scenario.id, seed=42)
+
+    response = self.client.get(
+        reverse("riskapp:strategy_compare_export", args=["word"]),
+        {
+            "portfolio": self.portfolio.id,
+            "selection_mode": "custom",
+            "results": [first_summary.result.id, second_summary.result.id],
+        },
+    )
+
+    self.assertEqual(response.status_code, 200)
+    self.assertIn("application/msword", response["Content-Type"])
+    self.assertContains(response, self.scenario.name)
+    self.assertContains(response, second_scenario.name)
+
+
+RiskAppWebUiTests.test_result_export_word_and_excel = _test_result_export_word_and_excel
+RiskAppWebUiTests.test_strategy_compare_export_word = _test_strategy_compare_export_word

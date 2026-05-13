@@ -1,0 +1,182 @@
+{% load riskapp_i18n %}
+<!doctype html>
+<html lang="{{ ui_language|default:'ru' }}">
+<head>
+    <meta charset="utf-8">
+    <title>{{ report_title }}</title>
+    <style>
+        body {
+            margin: 24px;
+            color: #17211b;
+            font-family: Georgia, "Times New Roman", serif;
+            background: #fffdf8;
+        }
+        h1, h2 { margin: 0 0 12px; }
+        .muted { color: #5f655d; }
+        .meta {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin: 18px 0 24px;
+        }
+        .card {
+            border: 1px solid #d8ccb3;
+            border-radius: 14px;
+            padding: 14px 16px;
+            background: #fffaf2;
+        }
+        .kicker {
+            color: #b64933;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 11px;
+            margin-bottom: 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+        th, td {
+            border: 1px solid #d8ccb3;
+            padding: 8px 10px;
+            vertical-align: top;
+            text-align: left;
+        }
+        th { background: #f6efe0; }
+        .report-chart { margin: 22px 0; }
+        .print-hint { margin-top: 8px; color: #5f655d; font-size: 0.95rem; }
+        @media print {
+            body { margin: 10mm; }
+            .print-hint { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="kicker">{% if ui_language == "ru" %}Отчёт по сравнению стратегий{% else %}Strategy comparison report{% endif %}</div>
+    <h1>
+        {% if selected_portfolio %}
+            {{ selected_portfolio.name }}
+        {% else %}
+            {{ report_title }}
+        {% endif %}
+    </h1>
+    <p class="muted">
+        {% if ui_language == "ru" %}
+            Сформировано {{ report_generated_at|date:"Y-m-d H:i" }}. В сравнении {{ comparison_results|length }} запуск(ов).
+        {% else %}
+            Generated at {{ report_generated_at|date:"Y-m-d H:i" }}. Comparing {{ comparison_results|length }} run(s).
+        {% endif %}
+    </p>
+
+    {% if report_format == "pdf" %}
+        <p class="print-hint">
+            {% if ui_language == "ru" %}
+                Используй печать браузера, чтобы сохранить эту страницу в PDF.
+            {% else %}
+                Use the browser print dialog to save this page as PDF.
+            {% endif %}
+        </p>
+    {% endif %}
+
+    <section class="meta">
+        <div class="card">
+            <div class="kicker">{% if ui_language == "ru" %}Портфель{% else %}Portfolio{% endif %}</div>
+            <strong>{{ selected_portfolio.name|default:"-" }}</strong>
+        </div>
+        <div class="card">
+            <div class="kicker">{% if ui_language == "ru" %}Запусков показано{% else %}Displayed runs{% endif %}</div>
+            <strong>{{ comparison_results|length }}</strong>
+        </div>
+        <div class="card">
+            <div class="kicker">{% if ui_language == "ru" %}Эффектов ребалансировки{% else %}Rebalancing insights{% endif %}</div>
+            <strong>{{ rebalancing_insights|length }}</strong>
+        </div>
+    </section>
+
+    {% if chart_svg %}
+        <section class="report-chart">
+            <h2>{% if ui_language == "ru" %}Нормализованная динамика выбранных запусков{% else %}Normalized dynamics of selected runs{% endif %}</h2>
+            {{ chart_svg|safe }}
+        </section>
+    {% endif %}
+
+    <section class="card">
+        <h2>{% if ui_language == "ru" %}Состав сравнения{% else %}Comparison set{% endif %}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>{% t "scenario" %}</th>
+                    <th>{% if ui_language == "ru" %}Пресет{% else %}Preset{% endif %}</th>
+                    <th>{% if ui_language == "ru" %}Режим стратегии{% else %}Strategy mode{% endif %}</th>
+                    <th>{% if ui_language == "ru" %}Выполнено{% else %}Executed{% endif %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in comparison_results %}
+                    <tr>
+                        <td>{{ item.scenario_name }}</td>
+                        <td>{{ item.scenario_preset_label }}</td>
+                        <td>{{ item.rebalancing_label }}</td>
+                        <td>{{ item.execution_time|date:"Y-m-d H:i" }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="card" style="margin-top: 18px;">
+        <h2>{% if ui_language == "ru" %}Ключевые метрики{% else %}Key metrics{% endif %}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>{% if ui_language == "ru" %}Метрика{% else %}Metric{% endif %}</th>
+                    {% for item in comparison_results %}
+                        <th>{{ item.selection_label }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in comparison_rows %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        {% for value in row.values %}
+                            <td>{{ value }}</td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    {% if rebalancing_insights %}
+        <section class="card" style="margin-top: 18px;">
+            <h2>{% if ui_language == "ru" %}Эффект ребалансировки{% else %}Rebalancing effect{% endif %}</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>{% t "scenario" %}</th>
+                        <th>{% if ui_language == "ru" %}Сравнение{% else %}Comparison{% endif %}</th>
+                        <th>{% if ui_language == "ru" %}Δ итог{% else %}Δ final value{% endif %}</th>
+                        <th>{% if ui_language == "ru" %}Δ доходность{% else %}Δ return{% endif %}</th>
+                        <th>{% if ui_language == "ru" %}Δ просадка{% else %}Δ drawdown{% endif %}</th>
+                        <th>{% if ui_language == "ru" %}Δ вероятность убытка{% else %}Δ loss probability{% endif %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for insight in rebalancing_insights %}
+                        <tr>
+                            <td>{{ insight.scenario_name }}</td>
+                            <td>{{ insight.target_label }} vs {{ insight.baseline_label }}</td>
+                            <td>{{ insight.final_value_delta|money_value:2 }} {{ insight.portfolio_unit_label }}</td>
+                            <td>{{ insight.expected_return_delta|percent_value:2 }} %</td>
+                            <td>{{ insight.drawdown_delta|percent_value:2 }} %</td>
+                            <td>{{ insight.loss_probability_delta|percent_value:2 }} %</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% endif %}
+</body>
+</html>

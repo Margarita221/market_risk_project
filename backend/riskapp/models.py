@@ -222,9 +222,13 @@ class TradeOperation(models.Model):
     instrument = models.ForeignKey(Instrument, on_delete=models.CASCADE, related_name="trade_operations")
     operation_type = models.CharField(max_length=4, choices=TYPE_CHOICES)
     quantity = models.PositiveIntegerField()
+    quoted_price = models.DecimalField(max_digits=15, decimal_places=4, default=0)
     price_per_unit = models.DecimalField(max_digits=15, decimal_places=4)
+    slippage_rate = models.DecimalField(max_digits=10, decimal_places=6, default=0)
+    slippage_amount = models.DecimalField(max_digits=15, decimal_places=4, default=0)
     commission = models.DecimalField(max_digits=15, decimal_places=4, default=0)
     realized_pnl = models.DecimalField(max_digits=15, decimal_places=4, null=True, blank=True)
+    cash_balance_after = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
     executed_at = models.DateTimeField(default=timezone.now)
     comment = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -242,6 +246,18 @@ class TradeOperation(models.Model):
             models.CheckConstraint(
                 condition=Q(price_per_unit__gte=0),
                 name="trade_operation_price_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=Q(quoted_price__gte=0),
+                name="trade_operation_quoted_price_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=Q(slippage_rate__gte=0),
+                name="trade_operation_slippage_rate_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=Q(slippage_amount__gte=0),
+                name="trade_operation_slippage_amount_gte_0",
             ),
             models.CheckConstraint(
                 condition=Q(commission__gte=0),
@@ -302,6 +318,8 @@ class Scenario(models.Model):
     sector_target = models.CharField(max_length=100, blank=True, default="")
     sector_shock = models.DecimalField(max_digits=10, decimal_places=6, default=0)
     interest_rate_shock = models.DecimalField(max_digits=10, decimal_places=6, default=0)
+    jump_intensity = models.DecimalField(max_digits=6, decimal_places=3, default=Decimal("0.200"))
+    jump_magnitude = models.DecimalField(max_digits=10, decimal_places=6, default=Decimal("0.040000"))
     systematic_risk = models.DecimalField(max_digits=5, decimal_places=4, default=Decimal("0.6500"))
     mean_reversion_strength = models.DecimalField(max_digits=5, decimal_places=4, default=Decimal("0.1500"))
     time_horizon = models.PositiveIntegerField()
@@ -337,6 +355,22 @@ class Scenario(models.Model):
             models.CheckConstraint(
                 condition=Q(mean_reversion_strength__lte=1),
                 name="scenario_mean_reversion_strength_lte_1",
+            ),
+            models.CheckConstraint(
+                condition=Q(jump_intensity__gte=0),
+                name="scenario_jump_intensity_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=Q(jump_intensity__lte=5),
+                name="scenario_jump_intensity_lte_5",
+            ),
+            models.CheckConstraint(
+                condition=Q(jump_magnitude__gte=0),
+                name="scenario_jump_magnitude_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=Q(jump_magnitude__lte=1),
+                name="scenario_jump_magnitude_lte_1",
             ),
             models.CheckConstraint(
                 condition=Q(time_horizon__gt=0),

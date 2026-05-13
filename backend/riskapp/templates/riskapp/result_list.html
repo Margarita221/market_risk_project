@@ -79,6 +79,7 @@
                         <th>{% t "final_value" %}</th>
                         <th>{% t "max_drawdown" %}</th>
                         <th>{% t "opened" %}</th>
+                        <th>{% if ui_language == "ru" %}Действия{% else %}Actions{% endif %}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -91,6 +92,12 @@
                             <td>{{ result.final_value|money_value:2 }} <span class="inline-unit">{% t "unit_rub" %}</span></td>
                             <td>{{ result.max_drawdown|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
                             <td>{{ result.execution_time|date:"Y-m-d H:i" }}</td>
+                            <td>
+                                <form method="post" action="{% url 'riskapp:result_delete' result.id %}" onsubmit="return confirm('{% if ui_language == "ru" %}Удалить этот результат моделирования?{% else %}Delete this simulation result?{% endif %}');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="button button-ghost">{% if ui_language == "ru" %}Удалить{% else %}Delete{% endif %}</button>
+                                </form>
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>

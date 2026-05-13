@@ -1,6 +1,6 @@
 from django.urls import path
 
-from riskapp import views
+from riskapp import clean_views, views
 
 
 app_name = "riskapp"
@@ -43,6 +43,9 @@ urlpatterns = [
     path("scenarios/<int:scenario_id>/delete/", views.scenario_delete, name="scenario_delete"),
     path("scenarios/<int:scenario_id>/run/", views.run_scenario, name="run_scenario"),
     path("results/", views.result_list, name="results"),
-    path("results/<int:result_id>/", views.result_detail, name="result_detail"),
-    path("strategies/compare/", views.strategy_compare, name="strategy_compare"),
+    path("results/<int:result_id>/", clean_views.result_detail, name="result_detail"),
+    path("results/<int:result_id>/export/<str:report_format>/", clean_views.result_export, name="result_export"),
+    path("results/<int:result_id>/delete/", views.result_delete, name="result_delete"),
+    path("strategies/compare/", clean_views.strategy_compare, name="strategy_compare"),
+    path("strategies/compare/export/<str:report_format>/", clean_views.strategy_compare_export, name="strategy_compare_export"),
 ]

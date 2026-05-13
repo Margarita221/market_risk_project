@@ -14,6 +14,16 @@
                 <a href="{% url 'riskapp:portfolio_detail' result.scenario.portfolio_id %}">{{ result.scenario.portfolio.name }}</a>.
                 {% t "executed" %} {{ result.execution_time|date:"Y-m-d H:i" }}.
             </p>
+            <div class="page-actions" style="margin-top: 18px;">
+                <a href="{% url 'riskapp:result_export' result.id 'pdf' %}" class="button button-secondary" target="_blank" rel="noopener">{% if ui_language == "ru" %}PDF / печать{% else %}PDF / print{% endif %}</a>
+                <a href="{% url 'riskapp:result_export' result.id 'word' %}" class="button button-secondary">Word</a>
+                <a href="{% url 'riskapp:result_export' result.id 'excel' %}" class="button button-secondary">Excel</a>
+                <a href="{% url 'riskapp:results' %}" class="button button-ghost">{% if ui_language == "ru" %}К списку результатов{% else %}Back to results{% endif %}</a>
+                <form method="post" action="{% url 'riskapp:result_delete' result.id %}" onsubmit="return confirm('{% if ui_language == "ru" %}Удалить этот результат моделирования?{% else %}Delete this simulation result?{% endif %}');">
+                    {% csrf_token %}
+                    <button type="submit" class="button button-ghost">{% if ui_language == "ru" %}Удалить результат{% else %}Delete result{% endif %}</button>
+                </form>
+            </div>
         </div>
         <div class="hero-spotlight">
             <span class="pill">{{ status_label }}</span>
@@ -81,6 +91,9 @@
                         <canvas id="portfolio-chart" class="chart-canvas"></canvas>
                         <div id="portfolio-chart-tooltip" class="chart-tooltip"></div>
                     </div>
+                    {% if result.chart_data.rebalancing_marker_days %}
+                        <p class="muted" style="margin-top: 10px;">{% if ui_language == "ru" %}Пунктирные вертикальные линии отмечают даты ребалансировки, когда модель возвращает доли позиций к целевой структуре портфеля.{% else %}Dashed vertical lines mark rebalance dates, when the model returns position weights to the target portfolio structure.{% endif %}</p>
+                    {% endif %}
                 </div>
                 <div>
                     <h3>{% t "positions_relative_chart" %}</h3>
@@ -104,6 +117,9 @@
             <div class="legend">
                 <span class="legend-item"><span class="legend-line"></span>{% t "portfolio_average_path" %}</span>
                 <span class="legend-item"><span class="legend-line sample"></span>{% t "position_paths_relative" %}</span>
+                {% if result.chart_data.rebalancing_marker_days %}
+                    <span class="legend-item"><span class="legend-line" style="border-top-style: dashed; opacity: 0.55;"></span>{% if ui_language == "ru" %}Даты ребалансировки{% else %}Rebalance dates{% endif %}</span>
+                {% endif %}
             </div>
         {% else %}
             <div class="empty">{% t "no_chart_data" %}</div>
@@ -319,7 +335,7 @@
                                     <strong>{{ position.ticker }}</strong>
                                     <small>{{ position.name }}</small>
                                 </td>
-                                <td>{{ position.instrument_type }}</td>
+                                <td>{% instrument_type_label position.instrument_type %}</td>
                                 <td>{{ position.currency }}</td>
                                 <td>{{ position.quantity }}</td>
                                 <td>{{ position.annual_income_yield_percent|numeric_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
@@ -345,6 +361,7 @@
         const moneyUnit = "{{ portfolio_unit_label }}";
         const percentUnit = "{% t "unit_percent" %}";
         const indexedBaseLabel = "{% t "positions_relative_base_label" %}";
+        const rebalanceMarkerDays = payload.rebalancing_marker_days || [];
 
         const resizeCanvas = (canvas, context) => {
             const ratio = window.devicePixelRatio || 1;
@@ -359,7 +376,7 @@
             minimumFractionDigits: 2,
         });
 
-        const drawChart = ({ canvasId, tooltipId, series, valueFormatter, tooltipFormatter, axisMode = "balanced" }) => {
+        const drawChart = ({ canvasId, tooltipId, series, valueFormatter, tooltipFormatter, axisMode = "balanced", verticalMarkers = [] }) => {
             const canvas = document.getElementById(canvasId);
             const tooltip = document.getElementById(tooltipId);
             const context = canvas.getContext("2d");
@@ -410,6 +427,45 @@
                 };
             };
 
+            const getNearestLabelIndex = (markerDay) => {
+                if (!labels.length) {
+                    return null;
+                }
+                let nearestIndex = 0;
+                let nearestDistance = Math.abs((labels[0] ?? 0) - markerDay);
+                labels.forEach((labelValue, index) => {
+                    const distance = Math.abs((labelValue ?? 0) - markerDay);
+                    if (distance < nearestDistance) {
+                        nearestDistance = distance;
+                        nearestIndex = index;
+                    }
+                });
+                return nearestIndex;
+            };
+
+            const drawMarkers = (rect, pathLength) => {
+                if (!verticalMarkers.length || pathLength < 2) {
+                    return;
+                }
+                const drawableHeight = rect.height - padding.top - padding.bottom;
+                context.save();
+                context.setLineDash([5, 4]);
+                context.strokeStyle = "rgba(181, 70, 45, 0.35)";
+                context.lineWidth = 1;
+                verticalMarkers.forEach((markerDay) => {
+                    const labelIndex = getNearestLabelIndex(markerDay);
+                    if (labelIndex === null) {
+                        return;
+                    }
+                    const point = getPoint(new Array(pathLength).fill(0), labelIndex, rect);
+                    context.beginPath();
+                    context.moveTo(point.x, padding.top);
+                    context.lineTo(point.x, padding.top + drawableHeight);
+                    context.stroke();
+                });
+                context.restore();
+            };
+
             const drawAxes = (rect) => {
                 context.clearRect(0, 0, rect.width, rect.height);
                 context.strokeStyle = "rgba(23, 33, 27, 0.16)";
@@ -436,6 +492,7 @@
             const drawSeries = () => {
                 const rect = canvas.getBoundingClientRect();
                 drawAxes(rect);
+                drawMarkers(rect, series[0].values.length);
                 series.forEach((item) => {
                     context.beginPath();
                     context.lineWidth = item.width || 3;
@@ -514,6 +571,7 @@
             valueFormatter: (value) => formatMoney(value),
             tooltipFormatter: (value) => `${formatMoney(value)} ${moneyUnit}`,
             axisMode: "balanced",
+            verticalMarkers: rebalanceMarkerDays,
         });
 
         const normalizeSeries = (values) => {
@@ -545,6 +603,7 @@
                 minimumFractionDigits: 2,
             })} ${percentUnit} - ${indexedBaseLabel}`,
             axisMode: "zero_if_one_sided",
+            verticalMarkers: rebalanceMarkerDays,
         });
 
         drawChart({
@@ -565,6 +624,7 @@
                 minimumFractionDigits: 2,
             })} ${percentUnit}`,
             axisMode: "negative_zero",
+            verticalMarkers: rebalanceMarkerDays,
         });
     })();
 </script>

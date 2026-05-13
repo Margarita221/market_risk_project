@@ -11,9 +11,9 @@
             <h1>{% if ui_language == "ru" %}Сценарии и режимы управления портфелем{% else %}Scenarios and portfolio management modes{% endif %}</h1>
             <p class="muted">
                 {% if ui_language == "ru" %}
-                    Выбери портфель, отметь нужные запуски и отдельно посмотри, что дала ребалансировка по сравнению с режимом без ребалансировки внутри одного и того же рыночного режима.
+                    Выбери портфель, отметь нужные прогоны и сравни, как менялись риск и итог в зависимости от сценария и режима ребалансировки.
                 {% else %}
-                    Pick a portfolio, keep only the runs you need, and inspect how rebalancing changed the outcome relative to buy-and-hold under the same market setup.
+                    Pick a portfolio, select the runs you need, and compare how scenario assumptions and rebalancing changed the outcome.
                 {% endif %}
             </p>
             {% if comparison_results %}
@@ -64,7 +64,7 @@
                     <strong style="display:block; margin-top:6px;">{{ comparison_results|length }}</strong>
                 </div>
                 <div class="mini-card" style="padding: 10px 12px;">
-                    <span class="section-kicker">{% if ui_language == "ru" %}Ребалансировка{% else %}Rebalancing{% endif %}</span>
+                    <span class="section-kicker">{% if ui_language == "ru" %}Инсайтов{% else %}Insights{% endif %}</span>
                     <strong style="display:block; margin-top:6px;">{{ rebalancing_insights|length }}</strong>
                 </div>
             </div>
@@ -81,11 +81,11 @@
                 <form method="get" class="form-card" style="gap: 10px; margin-top: 10px;">
                     <input type="hidden" name="portfolio" value="{{ selected_portfolio.id }}">
                     <input type="hidden" name="selection_mode" value="custom">
-                    <div class="mini-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px;">
+                    <div class="mini-grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px;">
                         {% for result_item in available_results %}
                             <label class="mini-card" style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; padding:10px 12px;">
                                 <input type="checkbox" name="results" value="{{ result_item.id }}" {% if result_item.checked %}checked{% endif %} style="margin-top:3px; width:auto;">
-                                <span style="display:block; line-height:1.3; font-size:0.95rem;">{{ result_item.label }}</span>
+                                <span style="display:block; line-height:1.35; font-size:0.95rem;">{{ result_item.label }}</span>
                             </label>
                         {% endfor %}
                     </div>
@@ -102,7 +102,7 @@
                 <div class="card-header">
                     <div>
                         <div class="section-kicker">{% if ui_language == "ru" %}Эффект ребалансировки{% else %}Rebalancing effect{% endif %}</div>
-                        <h2>{% if ui_language == "ru" %}Что меняется относительно режима без ребалансировки{% else %}What changes relative to buy-and-hold{% endif %}</h2>
+                        <h2>{% if ui_language == "ru" %}Что изменилось относительно режима без ребалансировки{% else %}What changed relative to buy-and-hold{% endif %}</h2>
                     </div>
                 </div>
                 <div class="mini-grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px;">
@@ -260,12 +260,12 @@
                 context.clearRect(0, 0, rect.width, rect.height);
                 drawAxes(rect.width, rect.height);
 
-                payload.forEach((item, index) => {
-                    context.strokeStyle = colors[index];
-                    context.lineWidth = 2.4;
+                payload.forEach((item, seriesIndex) => {
+                    const points = item.values.map((value, index) => buildPoint(index, item.values.length, value, rect.width, rect.height));
                     context.beginPath();
-                    item.values.forEach((value, pointIndex) => {
-                        const point = buildPoint(pointIndex, item.values.length, value, rect.width, rect.height);
+                    context.lineWidth = 2.5;
+                    context.strokeStyle = colors[seriesIndex];
+                    points.forEach((point, pointIndex) => {
                         if (pointIndex === 0) {
                             context.moveTo(point.x, point.y);
                         } else {
@@ -276,40 +276,38 @@
                 });
             };
 
-            const handleMove = (event) => {
+            const getTooltipLines = (index) => payload.map((item, seriesIndex) => {
+                const value = item.values[index] ?? item.values[item.values.length - 1];
+                return `<div style="display:flex; gap:8px; align-items:center;"><span style="width:10px; height:10px; border-radius:50%; background:${colors[seriesIndex]}; display:inline-block;"></span><span>${item.label}: ${value.toFixed(2)}%</span></div>`;
+            }).join("");
+
+            const attachHover = () => {
                 const rect = canvas.getBoundingClientRect();
-                const usableWidth = rect.width - padding.left - padding.right;
-                const relativeX = Math.min(Math.max(event.clientX - rect.left - padding.left, 0), usableWidth);
-                const maxLength = Math.max(...payload.map((item) => item.values.length));
-                const pointIndex = Math.round((relativeX / usableWidth) * Math.max(maxLength - 1, 1));
-                tooltip.style.display = "block";
-                tooltip.style.left = `${event.clientX - rect.left + 16}px`;
-                tooltip.style.top = `${event.clientY - rect.top + 16}px`;
-                tooltip.innerHTML = payload.map((item, index) => {
-                    const value = item.values[Math.min(pointIndex, item.values.length - 1)] ?? 0;
-                    return `<div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${colors[index]};margin-right:6px;"></span>${item.label}: ${value.toFixed(2)}%</div>`;
-                }).join("");
+                canvas.onmousemove = (event) => {
+                    const x = event.clientX - rect.left;
+                    const usableWidth = rect.width - padding.left - padding.right;
+                    const longest = Math.max(...payload.map((item) => item.values.length));
+                    const relative = Math.min(Math.max(x - padding.left, 0), usableWidth);
+                    const index = Math.round((relative / Math.max(usableWidth, 1)) * Math.max(longest - 1, 0));
+                    tooltip.innerHTML = `<strong>{% if ui_language == "ru" %}Шаг{% else %}Step{% endif %}: ${index}</strong>${getTooltipLines(index)}`;
+                    tooltip.style.opacity = "1";
+                    tooltip.style.left = `${Math.min(x + 24, rect.width - 220)}px`;
+                    tooltip.style.top = `${event.clientY - rect.top + 18}px`;
+                };
+                canvas.onmouseleave = () => {
+                    tooltip.style.opacity = "0";
+                };
             };
 
-            resizeCanvas();
-            draw();
-            canvas.addEventListener("mousemove", handleMove);
-            canvas.addEventListener("mouseleave", () => {
-                tooltip.style.display = "none";
-            });
-            window.addEventListener("resize", () => {
+            const render = () => {
                 resizeCanvas();
                 draw();
-            });
+                attachHover();
+            };
+
+            render();
+            window.addEventListener("resize", render);
         })();
     </script>
-{% elif selected_portfolio and selection_submitted %}
-    <section class="card">
-        <div class="empty">{% if ui_language == "ru" %}Отметь хотя бы один результат, чтобы построить сравнение.{% else %}Select at least one result to build the comparison.{% endif %}</div>
-    </section>
-{% elif selected_portfolio %}
-    <section class="card">
-        <div class="empty">{% if ui_language == "ru" %}Для выбранного портфеля пока недостаточно результатов моделирования для сравнения.{% else %}The selected portfolio does not have enough simulation results to compare yet.{% endif %}</div>
-    </section>
 {% endif %}
 {% endblock %}

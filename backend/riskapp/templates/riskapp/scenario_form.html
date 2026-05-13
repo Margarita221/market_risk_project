@@ -106,7 +106,7 @@
                 {{ form.rebalancing_frequency }}
                 <small class="muted">
                     {% if ui_language == "ru" %}
-                        Buy and hold оставляет доли портфеля естественно изменяться, а периодическая ребалансировка возвращает их к стартовой структуре.
+                        Режим без ребалансировки оставляет доли портфеля естественно изменяться, а периодическая ребалансировка возвращает их к стартовой структуре.
                     {% else %}
                         Buy and hold lets weights drift naturally, while periodic rebalancing restores the starting allocation.
                     {% endif %}
@@ -173,6 +173,18 @@
                 {{ form.interest_rate_shock.errors }}
             </label>
             <label>
+                {% if ui_language == "ru" %}Частота jump-событий{% else %}Jump event frequency{% endif %}
+                <span class="range-control">{{ form.jump_intensity }}</span>
+                <small class="muted">{% if ui_language == "ru" %}Ожидаемое число редких резких скачков за год: большие значения сильнее расширяют хвосты распределения.{% else %}Expected number of rare sharp jumps per year: higher values widen the tails of the distribution.{% endif %}</small>
+                {{ form.jump_intensity.errors }}
+            </label>
+            <label>
+                {% if ui_language == "ru" %}Размер jump-события{% else %}Jump event size{% endif %}
+                <span class="range-control">{{ form.jump_magnitude }}</span>
+                <small class="muted">{% if ui_language == "ru" %}Средняя амплитуда такого скачка: параметр добавляет редкие гэпы вверх или вниз поверх обычной динамики.{% else %}Average jump amplitude: the parameter adds rare gap-like moves up or down on top of normal dynamics.{% endif %}</small>
+                {{ form.jump_magnitude.errors }}
+            </label>
+            <label>
                 {% t "systematic_risk" %}
                 <span class="range-control">{{ form.systematic_risk }}</span>
                 <small class="muted">{% if ui_language == "ru" %}Насколько синхронно двигаются инструменты: 0 — почти независимо, 1 — почти как единый рынок.{% else %}Shows how synchronously instruments move: 0 is mostly independent, 1 is almost one market.{% endif %}</small>
@@ -218,11 +230,11 @@
 <script>
     (() => {
         const presetValues = {
-            base: { rebalancing_frequency: "none", trend: "0.060000", volatility: "0.120000", noise_level: "0.015000", market_shock: "0.000000", currency_shock: "0.000000", inflation_shock: "0.050000", sector_target: "", sector_shock: "0.000000", interest_rate_shock: "0.000000", systematic_risk: "0.5500", mean_reversion_strength: "0.1200", time_horizon: "365", time_step: "1.0000", iterations_count: "500" },
-            optimistic: { rebalancing_frequency: "none", trend: "0.120000", volatility: "0.140000", noise_level: "0.015000", market_shock: "0.030000", currency_shock: "0.020000", inflation_shock: "0.030000", sector_target: "Equities", sector_shock: "0.020000", interest_rate_shock: "-0.010000", systematic_risk: "0.5000", mean_reversion_strength: "0.1000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
-            pessimistic: { rebalancing_frequency: "none", trend: "-0.030000", volatility: "0.180000", noise_level: "0.020000", market_shock: "-0.040000", currency_shock: "-0.030000", inflation_shock: "0.070000", sector_target: "Equities", sector_shock: "-0.040000", interest_rate_shock: "0.015000", systematic_risk: "0.6000", mean_reversion_strength: "0.1500", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
-            stress: { rebalancing_frequency: "none", trend: "-0.070000", volatility: "0.280000", noise_level: "0.040000", market_shock: "-0.080000", currency_shock: "-0.060000", inflation_shock: "0.100000", sector_target: "Equities", sector_shock: "-0.070000", interest_rate_shock: "0.030000", systematic_risk: "0.7500", mean_reversion_strength: "0.1800", time_horizon: "240", time_step: "1.0000", iterations_count: "900" },
-            crisis: { rebalancing_frequency: "none", trend: "-0.120000", volatility: "0.400000", noise_level: "0.060000", market_shock: "-0.150000", currency_shock: "-0.100000", inflation_shock: "0.140000", sector_target: "Equities", sector_shock: "-0.120000", interest_rate_shock: "0.050000", systematic_risk: "0.8800", mean_reversion_strength: "0.2200", time_horizon: "180", time_step: "1.0000", iterations_count: "1000" }
+            base: { rebalancing_frequency: "none", trend: "0.060000", volatility: "0.120000", noise_level: "0.015000", market_shock: "0.000000", currency_shock: "0.000000", inflation_shock: "0.050000", sector_target: "", sector_shock: "0.000000", interest_rate_shock: "0.000000", jump_intensity: "0.200", jump_magnitude: "0.040000", systematic_risk: "0.5500", mean_reversion_strength: "0.1200", time_horizon: "365", time_step: "1.0000", iterations_count: "500" },
+            optimistic: { rebalancing_frequency: "none", trend: "0.120000", volatility: "0.140000", noise_level: "0.015000", market_shock: "0.030000", currency_shock: "0.020000", inflation_shock: "0.030000", sector_target: "Equities", sector_shock: "0.020000", interest_rate_shock: "-0.010000", jump_intensity: "0.250", jump_magnitude: "0.050000", systematic_risk: "0.5000", mean_reversion_strength: "0.1000", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
+            pessimistic: { rebalancing_frequency: "none", trend: "-0.030000", volatility: "0.180000", noise_level: "0.020000", market_shock: "-0.040000", currency_shock: "-0.030000", inflation_shock: "0.070000", sector_target: "Equities", sector_shock: "-0.040000", interest_rate_shock: "0.015000", jump_intensity: "0.600", jump_magnitude: "0.070000", systematic_risk: "0.6000", mean_reversion_strength: "0.1500", time_horizon: "365", time_step: "1.0000", iterations_count: "700" },
+            stress: { rebalancing_frequency: "none", trend: "-0.070000", volatility: "0.280000", noise_level: "0.040000", market_shock: "-0.080000", currency_shock: "-0.060000", inflation_shock: "0.100000", sector_target: "Equities", sector_shock: "-0.070000", interest_rate_shock: "0.030000", jump_intensity: "1.100", jump_magnitude: "0.100000", systematic_risk: "0.7500", mean_reversion_strength: "0.1800", time_horizon: "240", time_step: "1.0000", iterations_count: "900" },
+            crisis: { rebalancing_frequency: "none", trend: "-0.120000", volatility: "0.400000", noise_level: "0.060000", market_shock: "-0.150000", currency_shock: "-0.100000", inflation_shock: "0.140000", sector_target: "Equities", sector_shock: "-0.120000", interest_rate_shock: "0.050000", jump_intensity: "1.600", jump_magnitude: "0.150000", systematic_risk: "0.8800", mean_reversion_strength: "0.2200", time_horizon: "180", time_step: "1.0000", iterations_count: "1000" }
         };
 
         document.querySelectorAll(".scenario-form input[data-slider-min]").forEach((numberInput) => {

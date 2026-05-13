@@ -1,0 +1,158 @@
+{% load riskapp_i18n %}
+<!doctype html>
+<html lang="{{ ui_language|default:'ru' }}">
+<head>
+    <meta charset="utf-8">
+    <title>{{ report_title }}</title>
+    <style>
+        body {
+            margin: 24px;
+            color: #17211b;
+            font-family: Georgia, "Times New Roman", serif;
+            background: #fffdf8;
+        }
+        h1, h2, h3 { margin: 0 0 12px; }
+        .muted { color: #5f655d; }
+        .meta, .summary-grid { display: grid; gap: 12px; }
+        .meta { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 24px; }
+        .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 18px 0 26px; }
+        .card {
+            border: 1px solid #d8ccb3;
+            border-radius: 14px;
+            padding: 14px 16px;
+            background: #fffaf2;
+        }
+        .kicker {
+            color: #b64933;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 11px;
+            margin-bottom: 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+        th, td {
+            border: 1px solid #d8ccb3;
+            padding: 8px 10px;
+            vertical-align: top;
+            text-align: left;
+        }
+        th { background: #f6efe0; }
+        .report-chart { margin: 22px 0; }
+        .print-hint { margin-top: 8px; color: #5f655d; font-size: 0.95rem; }
+        @media print {
+            body { margin: 10mm; }
+            .print-hint { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="kicker">{% if ui_language == "ru" %}Отчёт по результату моделирования{% else %}Simulation result report{% endif %}</div>
+    <h1>{{ result.scenario.name }}</h1>
+    <p class="muted">
+        {% if ui_language == "ru" %}
+            Портфель: {{ result.scenario.portfolio.name }}. Сформировано {{ report_generated_at|date:"Y-m-d H:i" }}.
+        {% else %}
+            Portfolio: {{ result.scenario.portfolio.name }}. Generated at {{ report_generated_at|date:"Y-m-d H:i" }}.
+        {% endif %}
+    </p>
+
+    {% if report_format == "pdf" %}
+        <p class="print-hint">
+            {% if ui_language == "ru" %}
+                Используй печать браузера, чтобы сохранить эту страницу в PDF.
+            {% else %}
+                Use the browser print dialog to save this page as PDF.
+            {% endif %}
+        </p>
+    {% endif %}
+
+    <section class="meta">
+        <div class="card">
+            <div class="kicker">{% t "scenario_preset" %}</div>
+            <strong>{% preset_label result.scenario.preset %}</strong>
+        </div>
+        <div class="card">
+            <div class="kicker">{% if ui_language == "ru" %}Режим стратегии{% else %}Strategy mode{% endif %}</div>
+            <strong>{% rebalancing_label result.scenario.rebalancing_frequency %}</strong>
+        </div>
+    </section>
+
+    <section class="summary-grid">
+        {% for label, value in result_summary_rows %}
+            <div class="card">
+                <div class="kicker">{{ label }}</div>
+                <strong>{{ value }}</strong>
+            </div>
+        {% endfor %}
+    </section>
+
+    {% if portfolio_chart_svg %}
+        <section class="report-chart">
+            <h2>{% if ui_language == "ru" %}Средняя траектория портфеля{% else %}Average portfolio path{% endif %}</h2>
+            {{ portfolio_chart_svg|safe }}
+        </section>
+    {% endif %}
+
+    <section class="card">
+        <h2>{% t "risk_metrics" %}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>{% t "metric" %}</th>
+                    <th>{% t "value" %}</th>
+                    <th>{% t "confidence" %}</th>
+                    <th>{% t "calculated" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for metric in metrics %}
+                    <tr>
+                        <td>{{ metric.name }}</td>
+                        <td>{{ metric.display_value }} {{ metric.unit }}</td>
+                        <td>{% if metric.confidence_level != None %}{{ metric.confidence_level|numeric_value:2 }} {% t "unit_percent" %}{% else %}-{% endif %}</td>
+                        <td>{{ metric.calculated_at|date:"Y-m-d H:i" }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    {% if result.chart_data.position_paths %}
+        <section class="card" style="margin-top: 18px;">
+            <h2>{% t "position_outcomes" %}</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>{% t "instrument" %}</th>
+                        <th>{% t "type" %}</th>
+                        <th>{% t "currency" %}</th>
+                        <th>{% t "quantity" %}</th>
+                        <th>{% if ui_language == "ru" %}Годовой поток{% else %}Annual cash flow{% endif %}</th>
+                        <th>{% t "start_value" %}</th>
+                        <th>{% t "final_value" %}</th>
+                        <th>{% t "expected_return" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for position in result.chart_data.position_paths %}
+                        <tr>
+                            <td><strong>{{ position.ticker }}</strong><br><span class="muted">{{ position.name }}</span></td>
+                            <td>{% instrument_type_label position.instrument_type %}</td>
+                            <td>{{ position.currency }}</td>
+                            <td>{{ position.quantity }}</td>
+                            <td>{{ position.annual_income_yield_percent|numeric_value:2 }} {% t "unit_percent" %}</td>
+                            <td>{{ position.start_value|money_value:2 }} {{ position.base_currency }}</td>
+                            <td>{{ position.final_value|money_value:2 }} {{ position.base_currency }}</td>
+                            <td>{{ position.return_percent|numeric_value:2 }} {% t "unit_percent" %}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    {% endif %}
+</body>
+</html>

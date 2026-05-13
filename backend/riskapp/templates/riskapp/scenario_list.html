@@ -54,7 +54,7 @@
                 <select name="preset">
                     <option value="">{% t "all_presets" %}</option>
                     {% for value, label in presets %}
-                        <option value="{{ value }}"{% if selected_preset == value %} selected{% endif %}>{{ label }}</option>
+                        <option value="{{ value }}"{% if selected_preset == value %} selected{% endif %}>{% preset_label value %}</option>
                     {% endfor %}
                 </select>
             </label>
@@ -156,13 +156,13 @@
                                     {% endif %}
                                 </td>
                                 <td><a href="{% url 'riskapp:portfolio_detail' scenario.portfolio_id %}">{{ scenario.portfolio.name }}</a></td>
-                                <td>{{ scenario.get_preset_display }}</td>
+                                <td>{% preset_label scenario.preset %}</td>
                                 <td>{{ scenario.trend|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
                                 <td>{{ scenario.volatility|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
                                 <td>{{ scenario.market_shock|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
                                 <td>{{ scenario.currency_shock|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
                                 <td>{{ scenario.interest_rate_shock|percent_value:2 }} <span class="inline-unit">{% t "unit_percent" %}</span></td>
-                                <td>{{ scenario.get_rebalancing_frequency_display }}</td>
+                                <td>{% rebalancing_label scenario.rebalancing_frequency %}</td>
                                 <td>{{ scenario.time_horizon }} <span class="inline-unit">{% t "unit_days" %}</span></td>
                                 <td>{{ scenario.iterations_count }} <span class="inline-unit">{% t "unit_iterations" %}</span></td>
                                 <td><span class="pill">{{ scenario.results_count }}</span></td>

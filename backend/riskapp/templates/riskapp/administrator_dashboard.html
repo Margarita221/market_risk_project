@@ -150,7 +150,7 @@
                                 <td>{{ scenario.name }}</td>
                                 <td>{{ scenario.user.username }}</td>
                                 <td>{{ scenario.portfolio.name }}</td>
-                                <td>{{ scenario.get_preset_display }}</td>
+                                <td>{% preset_label scenario.preset %}</td>
                                 <td>{{ scenario.updated_at|date:"Y-m-d H:i" }}</td>
                                 <td>
                                     <div class="page-actions" style="margin-top: 0;">

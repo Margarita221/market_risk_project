@@ -17,15 +17,17 @@
             </h1>
             <p class="muted">
                 {% if ui_language == "ru" %}
-                    Сделка записывается в журнал операций и автоматически обновляет текущую позицию в портфеле. Цена подставляется из текущей рыночной котировки, а комиссия считается системой.
+                    Сделка записывается в журнал, обновляет текущую позицию и показывает, как на результат влияют комиссия, проскальзывание и денежный остаток.
                 {% else %}
-                    The trade is recorded in the journal and updates the current holding automatically. The quote comes from the current market price and commission is calculated by the system.
+                    The trade is stored in the journal, updates the holding, and shows how commission, slippage, and cash balance affect the result.
                 {% endif %}
             </p>
         </div>
         <div class="hero-spotlight">
             <span class="pill">{{ portfolio.name }}</span>
-            <div class="metric-note">{% if ui_language == "ru" %}Базовая валюта портфеля{% else %}Portfolio base currency{% endif %}: {{ portfolio.base_currency }}</div>
+            <div class="metric-note">
+                {% if ui_language == "ru" %}Базовая валюта{% else %}Base currency{% endif %}: {{ portfolio.base_currency }}
+            </div>
         </div>
     </div>
 </section>
@@ -36,7 +38,7 @@
             <div class="card-header">
                 <div>
                     <div class="section-kicker">{% if ui_language == "ru" %}Выбор позиции{% else %}Choose position{% endif %}</div>
-                    <h2>{% if ui_language == "ru" %}Что именно продаём{% else %}What to sell{% endif %}</h2>
+                    <h2>{% if ui_language == "ru" %}Что продаём{% else %}What to sell{% endif %}</h2>
                 </div>
             </div>
             {% if positions_for_sale %}
@@ -47,17 +49,12 @@
                                 <h3>{{ position.instrument.ticker }}</h3>
                                 <p class="muted">{{ position.instrument.name }}</p>
                                 <p class="muted">
-                                    {% if ui_language == "ru" %}Доступно{% else %}Available{% endif %}: {{ position.quantity }} ·
-                                    {% if ui_language == "ru" %}Текущая цена{% else %}Current price{% endif %}: {{ position.instrument.current_price|money_by_currency:position.instrument.currency }} {{ position.instrument.currency }} ·
-                                    {% if position.instrument.normalized_type == "bond" %}
-                                        {% if ui_language == "ru" %}Купон{% else %}Coupon{% endif %}: {{ position.instrument.coupon_yield|percent_value:2 }}%
-                                    {% else %}
-                                        {% if ui_language == "ru" %}Дивиденд{% else %}Dividend{% endif %}: {{ position.instrument.dividend_yield|percent_value:2 }}%
-                                    {% endif %}
+                                    {% if ui_language == "ru" %}Доступно{% else %}Available{% endif %}: {{ position.quantity }}
+                                    · {% if ui_language == "ru" %}Котировка{% else %}Quote{% endif %}: {{ position.instrument.current_price|money_by_currency:position.instrument.currency }} {{ position.instrument.currency }}
                                 </p>
                             </div>
                             <a class="button button-primary" href="{% url 'riskapp:portfolio_operation_create' portfolio.id %}?type=SELL&instrument={{ position.instrument.id }}">
-                                {% if ui_language == "ru" %}Выбрать для продажи{% else %}Choose for sell{% endif %}
+                                {% if ui_language == "ru" %}Выбрать{% else %}Choose{% endif %}
                             </a>
                         </div>
                     {% endfor %}
@@ -87,8 +84,37 @@
                                     <strong>{{ selected_instrument.name }}</strong>
                                 </div>
                                 <div class="detail-row">
-                                    <span class="detail-label">{% t "market_price" %}</span>
+                                    <span class="detail-label">{% if ui_language == "ru" %}Котировка до сделки{% else %}Quote before trade{% endif %}</span>
                                     <strong>{{ current_price|money_by_currency:selected_instrument.currency }} {{ selected_instrument.currency }}</strong>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">{% if ui_language == "ru" %}Цена исполнения{% else %}Execution price{% endif %}</span>
+                                    <strong>
+                                        {% if execution_price_preview %}
+                                            {{ execution_price_preview|money_by_currency:selected_instrument.currency }} {{ selected_instrument.currency }}
+                                        {% else %}-{% endif %}
+                                    </strong>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">{% if ui_language == "ru" %}Проскальзывание{% else %}Slippage{% endif %}</span>
+                                    <strong>
+                                        {% if slippage_preview %}
+                                            {{ slippage_preview|money_by_currency:selected_instrument.currency }} {{ selected_instrument.currency }}
+                                            {% if slippage_rate_preview %}<span class="inline-unit">({{ slippage_rate_preview|percent_value:2 }}%)</span>{% endif %}
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </strong>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">{% if ui_language == "ru" %}Комиссия сделки{% else %}Trade commission{% endif %}</span>
+                                    <strong>
+                                        {% if commission_preview %}
+                                            {{ commission_preview|money_by_currency:selected_instrument.currency }} {{ selected_instrument.currency }}
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </strong>
                                 </div>
                                 <div class="detail-row">
                                     <span class="detail-label">{% if ui_language == "ru" %}Годовой поток{% else %}Annual cash flow{% endif %}</span>
@@ -101,13 +127,20 @@
                                     </strong>
                                 </div>
                                 <div class="detail-row">
-                                    <span class="detail-label">{% if ui_language == "ru" %}Комиссия сделки{% else %}Trade commission{% endif %}</span>
+                                    <span class="detail-label">{% if ui_language == "ru" %}Денежный остаток по журналу{% else %}Journal cash balance{% endif %}</span>
                                     <strong>
-                                        {% if commission_preview %}
-                                            {{ commission_preview|money_by_currency:selected_instrument.currency }} {{ selected_instrument.currency }}
-                                        {% else %}
-                                            {% if ui_language == "ru" %}Считается автоматически{% else %}Calculated automatically{% endif %}
+                                        {{ cash_snapshot.balance|money_value:2 }} {{ cash_snapshot.currency }}
+                                        {% if not cash_snapshot.reliable %}
+                                            <span class="inline-unit">{% if ui_language == "ru" %}(оценочно){% else %}(estimated){% endif %}</span>
                                         {% endif %}
+                                    </strong>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">{% if ui_language == "ru" %}После сделки{% else %}After trade{% endif %}</span>
+                                    <strong>
+                                        {% if cash_after_preview != None %}
+                                            {{ cash_after_preview|money_value:2 }} {{ cash_snapshot.currency }}
+                                        {% else %}-{% endif %}
                                     </strong>
                                 </div>
                             </div>
@@ -158,16 +191,24 @@
         <h2>{% if ui_language == "ru" %}Что считает система{% else %}What the system calculates{% endif %}</h2>
         <div class="detail-list" style="margin-top: 18px;">
             <div class="detail-row">
-                <span class="detail-label">{% if ui_language == "ru" %}Цена{% else %}Price{% endif %}</span>
-                <strong>{% if ui_language == "ru" %}Берётся из текущей котировки инструмента{% else %}Taken from the current market quote{% endif %}</strong>
+                <span class="detail-label">{% if ui_language == "ru" %}Котировка{% else %}Quote{% endif %}</span>
+                <strong>{% if ui_language == "ru" %}Берётся из текущей рыночной цены инструмента{% else %}Taken from the current market quote{% endif %}</strong>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">{% if ui_language == "ru" %}Проскальзывание{% else %}Slippage{% endif %}</span>
+                <strong>{% if ui_language == "ru" %}Добавляет небольшое отклонение цены исполнения от котировки{% else %}Adds a small execution-price deviation from the quote{% endif %}</strong>
             </div>
             <div class="detail-row">
                 <span class="detail-label">{% if ui_language == "ru" %}Комиссия{% else %}Commission{% endif %}</span>
                 <strong>{% if ui_language == "ru" %}Рассчитывается автоматически как брокерская комиссия{% else %}Calculated automatically as broker commission{% endif %}</strong>
             </div>
             <div class="detail-row">
+                <span class="detail-label">{% if ui_language == "ru" %}Деньги{% else %}Cash{% endif %}</span>
+                <strong>{% if ui_language == "ru" %}Журнал хранит денежный остаток до и после сделки{% else %}The journal keeps the cash balance before and after the trade{% endif %}</strong>
+            </div>
+            <div class="detail-row">
                 <span class="detail-label">{% if ui_language == "ru" %}Результат{% else %}Result{% endif %}</span>
-                <strong>{% if ui_language == "ru" %}Журнал сделок и позиция в портфеле обновляются одновременно{% else %}The trade journal and portfolio position update together{% endif %}</strong>
+                <strong>{% if ui_language == "ru" %}Сделка и позиция обновляются одновременно{% else %}The trade and the portfolio position update together{% endif %}</strong>
             </div>
         </div>
         <div class="form-actions" style="margin-top: 18px;">

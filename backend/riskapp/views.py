@@ -16,10 +16,11 @@ from django.core.paginator import Paginator
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Avg, Count, DecimalField, ExpressionWrapper, F, Q, Sum
-from django.http import HttpResponseBadRequest, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.utils.encoding import force_bytes, force_str
+from django.utils.html import escape
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -45,7 +46,13 @@ from riskapp.i18n import get_request_language, normalize_language, translate
 from riskapp.models import Instrument, Portfolio, PortfolioPosition, Scenario, SimulationResult, TradeOperation
 from riskapp.services.exchange_rates import convert_amount, normalize_currency_code
 from riskapp.services.historical_calibration import calibrate_portfolio_scenario_parameters
-from riskapp.services.portfolio_operations import estimate_trade_commission, record_trade_operation
+from riskapp.services.portfolio_operations import (
+    estimate_trade_commission,
+    estimate_trade_execution_price,
+    estimate_trade_slippage_amount,
+    get_portfolio_cash_snapshot,
+    record_trade_operation,
+)
 from riskapp.services.simulation import run_scenario_simulation
 
 User = get_user_model()
@@ -169,6 +176,28 @@ def get_portfolio_unit_label(portfolio, language):
     return normalize_currency_code(getattr(portfolio, "base_currency", Portfolio.CURRENCY_RUB)) or translate("unit_rub", language)
 
 
+def get_preset_label(value, language):
+    labels = {
+        Scenario.PRESET_CUSTOM: localized_text(language, "Пользовательский", "Custom"),
+        Scenario.PRESET_BASE: localized_text(language, "Базовый", "Base"),
+        Scenario.PRESET_OPTIMISTIC: localized_text(language, "Оптимистичный", "Optimistic"),
+        Scenario.PRESET_PESSIMISTIC: localized_text(language, "Пессимистичный", "Pessimistic"),
+        Scenario.PRESET_STRESS: localized_text(language, "Стрессовый", "Stress"),
+        Scenario.PRESET_CRISIS: localized_text(language, "Кризисный", "Crisis"),
+    }
+    return labels.get(value, value or "-")
+
+
+def get_instrument_type_label(value, language):
+    normalized = str(value or "").strip().lower()
+    labels = {
+        Instrument.TYPE_STOCK: translate("instrument_type_stock", language),
+        Instrument.TYPE_BOND: translate("instrument_type_bond", language),
+        Instrument.TYPE_ETF: translate("instrument_type_etf", language),
+    }
+    return labels.get(normalized, value or "-")
+
+
 def localize_metric(metric, language, portfolio_unit_label=None):
     metric_name = metric.metric_name
     if metric_name in PERCENT_METRIC_NAMES:
@@ -194,6 +223,315 @@ def localize_metric(metric, language, portfolio_unit_label=None):
         "confidence_level": metric.confidence_level,
         "calculated_at": metric.calculated_at,
     }
+
+
+def build_marker_indexes(labels, marker_days):
+    if not labels or not marker_days:
+        return []
+
+    marker_indexes = []
+    for marker_day in marker_days:
+        nearest_index = 0
+        nearest_distance = abs((labels[0] or 0) - marker_day)
+        for index, label_value in enumerate(labels):
+            distance = abs((label_value or 0) - marker_day)
+            if distance < nearest_distance:
+                nearest_index = index
+                nearest_distance = distance
+        marker_indexes.append(nearest_index)
+    return marker_indexes
+
+
+def build_line_chart_svg(series, *, width=760, height=240, marker_indexes=None, percent_axis=False):
+    valid_series = [item for item in series if item.get("values")]
+    if not valid_series:
+        return ""
+
+    colors = ["#b64933", "#284967", "#2f7d55", "#7b4fa3", "#b78933", "#2b7f7f", "#8b3f52"]
+    padding_left = 72
+    padding_right = 18
+    padding_top = 16
+    padding_bottom = 28
+    drawable_width = width - padding_left - padding_right
+    drawable_height = height - padding_top - padding_bottom
+
+    all_values = [float(value) for item in valid_series for value in item["values"]]
+    min_value = min(all_values)
+    max_value = max(all_values)
+    if percent_axis:
+        min_value = min(min_value, 0.0)
+        max_value = max(max_value, 0.0)
+    if min_value == max_value:
+        min_value -= 1
+        max_value += 1
+    value_range = max(max_value - min_value, 1.0)
+
+    def build_point(index, total, value):
+        safe_total = max(total - 1, 1)
+        x = padding_left + (index / safe_total) * drawable_width
+        y = padding_top + (1 - ((float(value) - min_value) / value_range)) * drawable_height
+        return round(x, 2), round(y, 2)
+
+    grid_lines = []
+    for step in range(5):
+        value = max_value - (value_range * step / 4)
+        y = padding_top + drawable_height * step / 4
+        label = f"{value:.1f}%" if percent_axis else f"{value:,.2f}".replace(",", " ")
+        grid_lines.append(
+            f'<line x1="{padding_left}" y1="{y:.2f}" x2="{width - padding_right}" y2="{y:.2f}" '
+            f'stroke="rgba(23,33,27,0.10)" stroke-width="1" />'
+            f'<text x="8" y="{y + 4:.2f}" fill="#5f655d" font-size="11">{escape(label)}</text>'
+        )
+
+    marker_lines = []
+    if marker_indexes:
+        longest_series = max(valid_series, key=lambda item: len(item["values"]))
+        for marker_index in marker_indexes:
+            x, _ = build_point(marker_index, len(longest_series["values"]), longest_series["values"][marker_index])
+            marker_lines.append(
+                f'<line x1="{x}" y1="{padding_top}" x2="{x}" y2="{padding_top + drawable_height}" '
+                f'stroke="rgba(182,73,51,0.35)" stroke-width="1" stroke-dasharray="5 4" />'
+            )
+
+    paths = []
+    legend_items = []
+    for index, item in enumerate(valid_series):
+        color = item.get("color") or colors[index % len(colors)]
+        points = [
+            build_point(point_index, len(item["values"]), value)
+            for point_index, value in enumerate(item["values"])
+        ]
+        point_string = " ".join(f"{x},{y}" for x, y in points)
+        paths.append(
+            f'<polyline fill="none" stroke="{color}" stroke-width="2.5" '
+            f'points="{point_string}" />'
+        )
+        legend_y = height - 8
+        legend_x = padding_left + index * 120
+        legend_items.append(
+            f'<line x1="{legend_x}" y1="{legend_y}" x2="{legend_x + 18}" y2="{legend_y}" stroke="{color}" stroke-width="3" />'
+            f'<text x="{legend_x + 24}" y="{legend_y + 4}" fill="#17211b" font-size="11">{escape(item["label"])}</text>'
+        )
+
+    axis = (
+        f'<line x1="{padding_left}" y1="{padding_top}" x2="{padding_left}" y2="{padding_top + drawable_height}" '
+        f'stroke="rgba(23,33,27,0.16)" stroke-width="1" />'
+        f'<line x1="{padding_left}" y1="{padding_top + drawable_height}" x2="{width - padding_right}" y2="{padding_top + drawable_height}" '
+        f'stroke="rgba(23,33,27,0.16)" stroke-width="1" />'
+    )
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" '
+        f'role="img" aria-label="report chart">'
+        f'<rect width="{width}" height="{height}" rx="18" fill="#fffaf2" stroke="#d8ccb3" />'
+        f'{"".join(grid_lines)}{axis}{"".join(marker_lines)}{"".join(paths)}{"".join(legend_items)}</svg>'
+    )
+
+
+def build_result_detail_context_data(result, language):
+    chart_data = result.chart_data or {}
+    start_value = to_decimal(chart_data.get("start_value", 0))
+    best_value = to_decimal(chart_data.get("best_final_value", result.final_value))
+    worst_value = to_decimal(chart_data.get("worst_final_value", result.final_value))
+    p5_value = to_decimal(chart_data.get("percentile_5_final_value", result.final_value))
+    median_value = to_decimal(chart_data.get("median_final_value", result.final_value))
+    p95_value = to_decimal(chart_data.get("percentile_95_final_value", result.final_value))
+    value_span = max(best_value - worst_value, Decimal("1"))
+    portfolio_unit_label = get_portfolio_unit_label(result.scenario.portfolio, language)
+    metrics = [localize_metric(metric, language, portfolio_unit_label) for metric in result.risk_metrics.order_by("metric_name")]
+
+    def marker_position(value):
+        return float(((to_decimal(value) - worst_value) / value_span) * Decimal("100"))
+
+    return {
+        "result": result,
+        "metrics": metrics,
+        "run_notes": build_result_notes(result, language),
+        "status_label": translate("status_completed", language),
+        "portfolio_unit_label": portfolio_unit_label,
+        "risk_overview": [
+            {
+                "label": translate("probability_of_loss", language),
+                "value": chart_data.get("probability_of_loss_percent", 0),
+                "note": translate("risk_meter_loss_note", language),
+            },
+            {
+                "label": translate("probability_of_drawdown", language),
+                "value": chart_data.get("probability_of_critical_drawdown_percent", 0),
+                "note": translate("risk_meter_drawdown_note", language),
+            },
+            {
+                "label": translate("volatility", language),
+                "value": float(to_decimal(result.portfolio_volatility) * Decimal("100")),
+                "note": translate("risk_meter_volatility_note", language),
+            },
+            {
+                "label": translate("systematic_risk", language),
+                "value": chart_data.get("systematic_risk_percent", 0),
+                "note": translate("risk_meter_systematic_note", language),
+            },
+        ],
+        "distribution_markers": [
+            {"label": translate("worst_final_value", language), "value": format_display_number(worst_value, 2), "unit": portfolio_unit_label, "position": marker_position(worst_value), "tone": "worst"},
+            {"label": "P5", "value": format_display_number(p5_value, 2), "unit": portfolio_unit_label, "position": marker_position(p5_value), "tone": "p5"},
+            {"label": translate("median_final_value", language), "value": format_display_number(median_value, 2), "unit": portfolio_unit_label, "position": marker_position(median_value), "tone": "median"},
+            {"label": "P95", "value": format_display_number(p95_value, 2), "unit": portfolio_unit_label, "position": marker_position(p95_value), "tone": "p95"},
+            {"label": translate("best_final_value", language), "value": format_display_number(best_value, 2), "unit": portfolio_unit_label, "position": marker_position(best_value), "tone": "best"},
+        ],
+        "distribution_range": {
+            "start": format_display_number(worst_value, 2),
+            "end": format_display_number(best_value, 2),
+            "unit": portfolio_unit_label,
+            "delta_percent": format_display_percent(
+                ((best_value - start_value) / start_value) if start_value > 0 else 0,
+                2,
+            ),
+        },
+    }
+
+
+def build_result_report_context(result, language, report_format):
+    context = build_result_detail_context_data(result, language)
+    chart_data = result.chart_data or {}
+    marker_indexes = build_marker_indexes(chart_data.get("labels", []), chart_data.get("rebalancing_marker_days", []))
+    portfolio_chart_svg = ""
+    if report_format == "pdf" and chart_data.get("average_path"):
+        portfolio_chart_svg = build_line_chart_svg(
+            [{"label": result.scenario.name, "values": chart_data.get("average_path", [])}],
+            marker_indexes=marker_indexes,
+            percent_axis=False,
+        )
+
+    context.update({
+        "ui_language": language,
+        "report_format": report_format,
+        "report_generated_at": timezone.localtime(),
+        "report_title": localized_text(language, "Отчёт по моделированию сценария", "Scenario simulation report"),
+        "portfolio_chart_svg": portfolio_chart_svg,
+        "result_summary_rows": [
+            (translate("start_value", language), f"{format_display_number(chart_data.get('start_value', 0), 2)} {context['portfolio_unit_label']}"),
+            (translate("average_final_value", language), f"{format_display_number(chart_data.get('average_final_value', result.final_value), 2)} {context['portfolio_unit_label']}"),
+            (translate("expected_return", language), f"{format_display_percent(result.expected_return, 2)} %"),
+            (translate("volatility", language), f"{format_display_percent(result.portfolio_volatility, 2)} %"),
+            (translate("max_drawdown", language), f"{format_display_percent(result.max_drawdown, 2)} %"),
+            ("CVaR 95%", next((f"{metric['display_value']} {metric['unit']}" for metric in context["metrics"] if metric["name"] == "CVaR 95%"), "-")),
+        ],
+    })
+    return context
+
+
+def resolve_strategy_compare_state(request, language):
+    portfolios_queryset = user_scope(request.user, Portfolio.objects.all())
+    results_queryset = user_scope(
+        request.user,
+        SimulationResult.objects.select_related("scenario", "scenario__portfolio").prefetch_related("risk_metrics"),
+        owner_lookup="scenario__user",
+    )
+
+    default_portfolio = None
+    if request.method == "GET" and not request.GET:
+        default_portfolio_id = (
+            results_queryset.order_by("-execution_time")
+            .values_list("scenario__portfolio_id", flat=True)
+            .first()
+        )
+        if default_portfolio_id:
+            default_portfolio = portfolios_queryset.filter(id=default_portfolio_id).first()
+
+    form = StrategyComparisonForm(
+        request.GET or None,
+        portfolios_queryset=portfolios_queryset,
+        language=language,
+        initial={"portfolio": default_portfolio.id} if default_portfolio else None,
+    )
+
+    selected_portfolio = None
+    comparison_results = []
+    comparison_rows = []
+    chart_series = []
+    available_results = []
+    selected_result_ids = set()
+    selection_submitted = request.GET.get("selection_mode") == "custom"
+    rebalancing_insights = []
+
+    if form.is_bound and form.is_valid():
+        selected_portfolio = form.cleaned_data["portfolio"]
+    elif not form.is_bound and default_portfolio:
+        selected_portfolio = default_portfolio
+
+    if selected_portfolio is not None:
+        portfolio_results = list(
+            results_queryset
+            .filter(scenario__portfolio=selected_portfolio)
+            .order_by("scenario__name", "execution_time", "id")
+        )
+        raw_selected_ids = {
+            int(value)
+            for value in request.GET.getlist("results")
+            if str(value).isdigit()
+        }
+        if selection_submitted:
+            filtered_results = [result for result in portfolio_results if result.id in raw_selected_ids]
+            selected_result_ids = raw_selected_ids
+        else:
+            filtered_results = portfolio_results
+            selected_result_ids = {result.id for result in portfolio_results}
+
+        available_results = [
+            {
+                "id": result.id,
+                "label": localized_text(
+                    language,
+                    f"{result.scenario.name} · {timezone.localtime(result.execution_time).strftime('%d.%m.%Y %H:%M')}",
+                    f"{result.scenario.name} · {timezone.localtime(result.execution_time).strftime('%Y-%m-%d %H:%M')}",
+                ),
+                "checked": result.id in selected_result_ids,
+            }
+            for result in portfolio_results
+        ]
+        comparison_results, comparison_rows, chart_series = build_strategy_comparison_payload(filtered_results, language)
+        rebalancing_insights = build_rebalancing_insights(comparison_results)
+
+    return {
+        "form": form,
+        "comparison_results": comparison_results,
+        "comparison_rows": comparison_rows,
+        "chart_series": chart_series,
+        "selected_portfolio": selected_portfolio,
+        "available_results": available_results,
+        "selected_result_ids": selected_result_ids,
+        "selection_submitted": selection_submitted,
+        "rebalancing_insights": rebalancing_insights,
+    }
+
+
+def build_strategy_compare_report_context(state, language, report_format):
+    chart_svg = ""
+    if report_format == "pdf" and state["chart_series"]:
+        chart_svg = build_line_chart_svg(state["chart_series"], percent_axis=True)
+
+    return {
+        **state,
+        "ui_language": language,
+        "report_format": report_format,
+        "report_generated_at": timezone.localtime(),
+        "report_title": localized_text(language, "Сравнение стратегий", "Strategy comparison"),
+        "chart_svg": chart_svg,
+    }
+
+
+def build_report_response(*, template_name, context, report_format, filename_stem):
+    html = render_to_string(template_name, context)
+    if report_format == "word":
+        response = HttpResponse(html, content_type="application/msword; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename_stem}.doc"'
+        return response
+    if report_format == "excel":
+        response = HttpResponse(html, content_type="application/vnd.ms-excel; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename_stem}.xls"'
+        return response
+    if report_format == "pdf":
+        return HttpResponse(html, content_type="text/html; charset=utf-8")
+    raise ValueError(f"Unsupported report format: {report_format}")
 
 
 def build_result_notes(result, language):
@@ -518,6 +856,7 @@ def get_portfolio_detail_context(portfolio, language="ru", scenario_form=None, p
         .order_by("-executed_at", "-created_at")[:5]
     )
     base_currency = get_portfolio_unit_label(portfolio, language)
+    cash_snapshot = get_portfolio_cash_snapshot(portfolio)
     has_missing_rates = False
     for position in positions:
         position.instrument.currency = normalize_currency_code(position.instrument.currency)
@@ -545,6 +884,7 @@ def get_portfolio_detail_context(portfolio, language="ru", scenario_form=None, p
         }, language=language),
         "recent_operations": recent_operations,
         "operations_count": portfolio.trade_operations.count(),
+        "cash_snapshot": cash_snapshot,
     }
 
 
@@ -647,13 +987,17 @@ def portfolio_operations(request, portfolio_id):
 
     operation_rows = []
     total_commission = Decimal("0")
+    total_slippage = Decimal("0")
     realized_total = Decimal("0")
     buy_count = 0
     sell_count = 0
+    latest_cash_balance = None
 
     for operation in operations:
         instrument_currency = normalize_currency_code(operation.instrument.currency)
+        quoted_value, quoted_unit = convert_trade_value(operation.quoted_price, instrument_currency)
         gross_value, gross_unit = convert_trade_value(operation.gross_amount, instrument_currency)
+        slippage_value, slippage_unit = convert_trade_value(operation.slippage_amount, instrument_currency)
         commission_value, commission_unit = convert_trade_value(operation.commission, instrument_currency)
         net_value, net_unit = convert_trade_value(operation.net_amount, instrument_currency)
         realized_value = None
@@ -663,16 +1007,23 @@ def portfolio_operations(request, portfolio_id):
             realized_total += realized_value
 
         total_commission += commission_value
+        total_slippage += slippage_value
         if operation.operation_type == TradeOperation.TYPE_BUY:
             buy_count += 1
         else:
             sell_count += 1
+        if latest_cash_balance is None and operation.cash_balance_after is not None:
+            latest_cash_balance = operation.cash_balance_after
 
         operation_rows.append({
             "operation": operation,
             "price_currency": instrument_currency,
+            "quoted_price": quoted_value,
+            "quoted_unit": quoted_unit,
             "gross_amount": gross_value,
             "gross_unit": gross_unit,
+            "slippage_amount": slippage_value,
+            "slippage_unit": slippage_unit,
             "commission_amount": commission_value,
             "commission_unit": commission_unit,
             "net_amount": net_value,
@@ -691,8 +1042,11 @@ def portfolio_operations(request, portfolio_id):
             "buy_count": buy_count,
             "sell_count": sell_count,
             "total_commission": total_commission,
+            "total_slippage": total_slippage,
             "realized_total": realized_total,
+            "latest_cash_balance": latest_cash_balance,
         },
+        "cash_snapshot": get_portfolio_cash_snapshot(portfolio),
     })
 
 
@@ -1297,6 +1651,662 @@ def strategy_compare(request):
     })
 
 
+def get_rebalancing_label(value, language):
+    labels = {
+        Scenario.REBALANCE_NONE: localized_text(language, "Без ребалансировки", "Buy and hold"),
+        Scenario.REBALANCE_MONTHLY: localized_text(language, "Ежемесячная ребалансировка", "Monthly rebalance"),
+        Scenario.REBALANCE_QUARTERLY: localized_text(language, "Квартальная ребалансировка", "Quarterly rebalance"),
+    }
+    return labels.get(value, value or "-")
+
+
+def build_result_notes(result, language):
+    chart_data = result.chart_data or {}
+    scenario = result.scenario
+    notes = [
+        translate(
+            "run_note_iterations_steps",
+            language,
+            iterations=chart_data.get("iterations", scenario.iterations_count),
+            steps=chart_data.get("steps", "-"),
+        ),
+        translate("scenario_preset", language) + f": {get_preset_label(scenario.preset, language)}.",
+        localized_text(language, "Режим стратегии", "Strategy mode") + f": {get_rebalancing_label(scenario.rebalancing_frequency, language)}.",
+        translate("run_note_chart_consistency", language),
+    ]
+    if scenario.rebalancing_frequency != Scenario.REBALANCE_NONE:
+        notes.append(
+            localized_text(
+                language,
+                "Ступеньки на графике соответствуют датам ребалансировки: в эти моменты модель дискретно возвращает доли позиций к целевым весам портфеля.",
+                "The visible steps mark rebalance dates: at those points the model discretely returns position weights to the target portfolio mix.",
+            )
+        )
+    if to_decimal(chart_data.get("jump_intensity", 0)) > 0 and to_decimal(chart_data.get("jump_magnitude_percent", 0)) > 0:
+        notes.append(
+            localized_text(
+                language,
+                f"Jump-компонент добавляет редкие резкие движения внутри горизонта: в среднем около {chart_data.get('average_jump_events', 0)} событий на прогон с типичной амплитудой около {chart_data.get('jump_magnitude_percent', 0)}%.",
+                f"The jump component adds rare sharp moves inside the horizon: on average about {chart_data.get('average_jump_events', 0)} events per run with a typical amplitude near {chart_data.get('jump_magnitude_percent', 0)}%.",
+            )
+        )
+    return notes
+
+
+def build_strategy_comparison_payload(results, language):
+    comparison_results = []
+    chart_series = []
+
+    for result in results:
+        metric_map = get_metric_map(result)
+        portfolio_unit_label = get_portfolio_unit_label(result.scenario.portfolio, language)
+        average_path = result.chart_data.get("average_path", [])
+        start_value = to_decimal(average_path[0] if average_path else 0)
+        normalized_path = []
+        for point in average_path:
+            point_decimal = to_decimal(point)
+            if start_value > 0:
+                normalized_path.append(float(((point_decimal / start_value) - Decimal("1")) * Decimal("100")))
+            else:
+                normalized_path.append(0.0)
+
+        timestamp_label = timezone.localtime(result.execution_time).strftime("%Y-%m-%d %H:%M")
+        comparison_results.append({
+            "id": result.id,
+            "scenario_id": result.scenario_id,
+            "scenario_name": result.scenario.name,
+            "scenario_preset_label": get_preset_label(result.scenario.preset, language),
+            "portfolio_name": result.scenario.portfolio.name,
+            "execution_time": result.execution_time,
+            "selection_label": localized_text(
+                language,
+                f"{result.scenario.name} · {timezone.localtime(result.execution_time).strftime('%d.%m.%Y %H:%M')}",
+                f"{result.scenario.name} · {timestamp_label}",
+            ),
+            "portfolio_unit_label": portfolio_unit_label,
+            "expected_return": result.expected_return,
+            "final_value": result.final_value,
+            "volatility": result.portfolio_volatility,
+            "max_drawdown": result.max_drawdown,
+            "probability_of_loss": metric_map.get("Probability of Loss", Decimal("0")),
+            "probability_of_drawdown": metric_map.get("Probability of Drawdown > 10%", Decimal("0")),
+            "var_95": metric_map.get("VaR 95%", Decimal("0")),
+            "cvar_95": metric_map.get("CVaR 95%", Decimal("0")),
+            "sharpe_ratio": metric_map.get("Sharpe Ratio", Decimal("0")),
+            "rebalancing_frequency": result.scenario.rebalancing_frequency,
+            "rebalancing_label": get_rebalancing_label(result.scenario.rebalancing_frequency, language),
+            "market_signature": get_scenario_family_key(result.scenario),
+        })
+        chart_series.append({
+            "label": localized_text(
+                language,
+                f"{result.scenario.name} · {timezone.localtime(result.execution_time).strftime('%d.%m %H:%M')}",
+                f"{result.scenario.name} · {timestamp_label}",
+            ),
+            "values": normalized_path,
+        })
+
+    metric_specs = [
+        (localized_text(language, "Средний итог", "Average final value"), lambda item: f"{format_display_number(item['final_value'], 2)} {item['portfolio_unit_label']}"),
+        (localized_text(language, "Ожидаемая доходность", "Expected return"), lambda item: f"{format_display_percent(item['expected_return'], 2)} %"),
+        (localized_text(language, "Волатильность", "Volatility"), lambda item: f"{format_display_percent(item['volatility'], 2)} %"),
+        (localized_text(language, "Максимальная просадка", "Max drawdown"), lambda item: f"{format_display_percent(item['max_drawdown'], 2)} %"),
+        (localized_text(language, "Вероятность убытка", "Probability of loss"), lambda item: f"{format_display_percent(item['probability_of_loss'], 2)} %"),
+        (localized_text(language, "Вероятность просадки > 10%", "Probability of drawdown > 10%"), lambda item: f"{format_display_percent(item['probability_of_drawdown'], 2)} %"),
+        ("VaR 95%", lambda item: f"{format_display_percent(item['var_95'], 2)} %"),
+        ("CVaR 95%", lambda item: f"{format_display_percent(item['cvar_95'], 2)} %"),
+        (localized_text(language, "Коэффициент Шарпа", "Sharpe ratio"), lambda item: format_display_number(item["sharpe_ratio"], 4)),
+    ]
+    comparison_rows = [
+        {"label": row_label, "values": [formatter(item) for item in comparison_results]}
+        for row_label, formatter in metric_specs
+    ]
+    return comparison_results, comparison_rows, chart_series
+
+
+@login_required
+def strategy_compare(request):
+    language = get_request_language(request)
+    context = resolve_strategy_compare_state(request, language)
+    return render(request, "riskapp/strategy_compare.html", context)
+
+
+@login_required
+def result_detail(request, result_id):
+    language = get_request_language(request)
+    result = get_object_or_404(
+        user_scope(
+            request.user,
+            SimulationResult.objects.select_related("scenario", "scenario__portfolio"),
+            owner_lookup="scenario__user",
+        ),
+        id=result_id,
+    )
+    context = build_result_detail_context_data(result, language)
+    return render(request, "riskapp/result_detail.html", context)
+
+
+@login_required
+def result_export(request, result_id, report_format):
+    language = get_request_language(request)
+    report_format = str(report_format).strip().lower()
+    if report_format not in {"pdf", "word", "excel"}:
+        return HttpResponseBadRequest("Unsupported report format.")
+
+    result = get_object_or_404(
+        user_scope(
+            request.user,
+            SimulationResult.objects.select_related("scenario", "scenario__portfolio"),
+            owner_lookup="scenario__user",
+        ),
+        id=result_id,
+    )
+    context = build_result_report_context(result, language, report_format)
+    return build_report_response(
+        template_name="riskapp/reports/result_report.html",
+        context=context,
+        report_format=report_format,
+        filename_stem=f"scenario-result-{result.id}",
+    )
+
+
+@login_required
+def strategy_compare_export(request, report_format):
+    language = get_request_language(request)
+    report_format = str(report_format).strip().lower()
+    if report_format not in {"pdf", "word", "excel"}:
+        return HttpResponseBadRequest("Unsupported report format.")
+
+    state = resolve_strategy_compare_state(request, language)
+    if not state["comparison_results"]:
+        messages.error(
+            request,
+            localized_text(
+                language,
+                "Сначала выбери портфель и хотя бы один результат моделирования для сравнения.",
+                "Select a portfolio and at least one simulation result before exporting the comparison.",
+            ),
+        )
+        redirect_url = reverse("riskapp:strategy_compare")
+        if request.GET:
+            redirect_url = f"{redirect_url}?{request.GET.urlencode()}"
+        return redirect(redirect_url)
+
+    context = build_strategy_compare_report_context(state, language, report_format)
+    return build_report_response(
+        template_name="riskapp/reports/strategy_compare_report.html",
+        context=context,
+        report_format=report_format,
+        filename_stem=f"strategy-compare-{state['selected_portfolio'].id if state['selected_portfolio'] else 'selection'}",
+    )
+
+
+def get_rebalancing_label(value, language):
+    labels = {
+        Scenario.REBALANCE_NONE: localized_text(language, "Без ребалансировки", "Buy and hold"),
+        Scenario.REBALANCE_MONTHLY: localized_text(language, "Ежемесячная ребалансировка", "Monthly rebalance"),
+        Scenario.REBALANCE_QUARTERLY: localized_text(language, "Квартальная ребалансировка", "Quarterly rebalance"),
+    }
+    return labels.get(value, value or "-")
+
+
+def build_result_notes(result, language):
+    chart_data = result.chart_data or {}
+    scenario = result.scenario
+    notes = [
+        translate(
+            "run_note_iterations_steps",
+            language,
+            iterations=chart_data.get("iterations", scenario.iterations_count),
+            steps=chart_data.get("steps", "-"),
+        ),
+        translate("scenario_preset", language) + f": {get_preset_label(scenario.preset, language)}.",
+        localized_text(language, "Режим стратегии", "Strategy mode") + f": {get_rebalancing_label(scenario.rebalancing_frequency, language)}.",
+        translate("run_note_chart_consistency", language),
+    ]
+    if scenario.rebalancing_frequency != Scenario.REBALANCE_NONE:
+        notes.append(
+            localized_text(
+                language,
+                "Ступеньки на графике соответствуют датам ребалансировки: в эти моменты модель дискретно возвращает доли позиций к целевым весам портфеля.",
+                "The visible steps mark rebalance dates: at those points the model discretely returns position weights to the target portfolio mix.",
+            )
+        )
+    if to_decimal(chart_data.get("jump_intensity", 0)) > 0 and to_decimal(chart_data.get("jump_magnitude_percent", 0)) > 0:
+        notes.append(
+            localized_text(
+                language,
+                f"Jump-компонент добавляет редкие резкие движения внутри горизонта: в среднем около {chart_data.get('average_jump_events', 0)} событий на прогон с типичной амплитудой около {chart_data.get('jump_magnitude_percent', 0)}%.",
+                f"The jump component adds rare sharp moves inside the horizon: on average about {chart_data.get('average_jump_events', 0)} events per run with a typical amplitude near {chart_data.get('jump_magnitude_percent', 0)}%.",
+            )
+        )
+    return notes
+
+
+def build_strategy_comparison_payload(results, language):
+    comparison_results = []
+    chart_series = []
+
+    for result in results:
+        metric_map = get_metric_map(result)
+        portfolio_unit_label = get_portfolio_unit_label(result.scenario.portfolio, language)
+        average_path = result.chart_data.get("average_path", [])
+        start_value = to_decimal(average_path[0] if average_path else 0)
+        normalized_path = []
+        for point in average_path:
+            point_decimal = to_decimal(point)
+            if start_value > 0:
+                normalized_path.append(float(((point_decimal / start_value) - Decimal("1")) * Decimal("100")))
+            else:
+                normalized_path.append(0.0)
+
+        timestamp_label = timezone.localtime(result.execution_time).strftime("%Y-%m-%d %H:%M")
+        comparison_results.append({
+            "id": result.id,
+            "scenario_id": result.scenario_id,
+            "scenario_name": result.scenario.name,
+            "scenario_preset_label": get_preset_label(result.scenario.preset, language),
+            "portfolio_name": result.scenario.portfolio.name,
+            "execution_time": result.execution_time,
+            "selection_label": localized_text(
+                language,
+                f"{result.scenario.name} · {timezone.localtime(result.execution_time).strftime('%d.%m.%Y %H:%M')}",
+                f"{result.scenario.name} · {timestamp_label}",
+            ),
+            "portfolio_unit_label": portfolio_unit_label,
+            "expected_return": result.expected_return,
+            "final_value": result.final_value,
+            "volatility": result.portfolio_volatility,
+            "max_drawdown": result.max_drawdown,
+            "probability_of_loss": metric_map.get("Probability of Loss", Decimal("0")),
+            "probability_of_drawdown": metric_map.get("Probability of Drawdown > 10%", Decimal("0")),
+            "var_95": metric_map.get("VaR 95%", Decimal("0")),
+            "cvar_95": metric_map.get("CVaR 95%", Decimal("0")),
+            "sharpe_ratio": metric_map.get("Sharpe Ratio", Decimal("0")),
+            "rebalancing_frequency": result.scenario.rebalancing_frequency,
+            "rebalancing_label": get_rebalancing_label(result.scenario.rebalancing_frequency, language),
+            "market_signature": get_scenario_family_key(result.scenario),
+        })
+        chart_series.append({
+            "label": localized_text(
+                language,
+                f"{result.scenario.name} · {timezone.localtime(result.execution_time).strftime('%d.%m %H:%M')}",
+                f"{result.scenario.name} · {timestamp_label}",
+            ),
+            "values": normalized_path,
+        })
+
+    metric_specs = [
+        (localized_text(language, "Средний итог", "Average final value"), lambda item: f"{format_display_number(item['final_value'], 2)} {item['portfolio_unit_label']}"),
+        (localized_text(language, "Ожидаемая доходность", "Expected return"), lambda item: f"{format_display_percent(item['expected_return'], 2)} %"),
+        (localized_text(language, "Волатильность", "Volatility"), lambda item: f"{format_display_percent(item['volatility'], 2)} %"),
+        (localized_text(language, "Максимальная просадка", "Max drawdown"), lambda item: f"{format_display_percent(item['max_drawdown'], 2)} %"),
+        (localized_text(language, "Вероятность убытка", "Probability of loss"), lambda item: f"{format_display_percent(item['probability_of_loss'], 2)} %"),
+        (localized_text(language, "Вероятность просадки > 10%", "Probability of drawdown > 10%"), lambda item: f"{format_display_percent(item['probability_of_drawdown'], 2)} %"),
+        ("VaR 95%", lambda item: f"{format_display_percent(item['var_95'], 2)} %"),
+        ("CVaR 95%", lambda item: f"{format_display_percent(item['cvar_95'], 2)} %"),
+        (localized_text(language, "Коэффициент Шарпа", "Sharpe ratio"), lambda item: format_display_number(item["sharpe_ratio"], 4)),
+    ]
+    comparison_rows = [
+        {"label": row_label, "values": [formatter(item) for item in comparison_results]}
+        for row_label, formatter in metric_specs
+    ]
+    return comparison_results, comparison_rows, chart_series
+
+
+@login_required
+def strategy_compare(request):
+    language = get_request_language(request)
+    context = resolve_strategy_compare_state(request, language)
+    return render(request, "riskapp/strategy_compare.html", context)
+
+
+@login_required
+def result_detail(request, result_id):
+    language = get_request_language(request)
+    result = get_object_or_404(
+        user_scope(
+            request.user,
+            SimulationResult.objects.select_related("scenario", "scenario__portfolio"),
+            owner_lookup="scenario__user",
+        ),
+        id=result_id,
+    )
+    context = build_result_detail_context_data(result, language)
+    return render(request, "riskapp/result_detail.html", context)
+
+
+@login_required
+def result_export(request, result_id, report_format):
+    language = get_request_language(request)
+    report_format = str(report_format).strip().lower()
+    if report_format not in {"pdf", "word", "excel"}:
+        return HttpResponseBadRequest("Unsupported report format.")
+
+    result = get_object_or_404(
+        user_scope(
+            request.user,
+            SimulationResult.objects.select_related("scenario", "scenario__portfolio"),
+            owner_lookup="scenario__user",
+        ),
+        id=result_id,
+    )
+    context = build_result_report_context(result, language, report_format)
+    return build_report_response(
+        template_name="riskapp/reports/result_report.html",
+        context=context,
+        report_format=report_format,
+        filename_stem=f"scenario-result-{result.id}",
+    )
+
+
+@login_required
+def strategy_compare_export(request, report_format):
+    language = get_request_language(request)
+    report_format = str(report_format).strip().lower()
+    if report_format not in {"pdf", "word", "excel"}:
+        return HttpResponseBadRequest("Unsupported report format.")
+
+    state = resolve_strategy_compare_state(request, language)
+    if not state["comparison_results"]:
+        messages.error(
+            request,
+            localized_text(
+                language,
+                "Сначала выбери портфель и хотя бы один результат моделирования для сравнения.",
+                "Select a portfolio and at least one simulation result before exporting the comparison.",
+            ),
+        )
+        redirect_url = reverse("riskapp:strategy_compare")
+        if request.GET:
+            redirect_url = f"{redirect_url}?{request.GET.urlencode()}"
+        return redirect(redirect_url)
+
+    context = build_strategy_compare_report_context(state, language, report_format)
+    return build_report_response(
+        template_name="riskapp/reports/strategy_compare_report.html",
+        context=context,
+        report_format=report_format,
+        filename_stem=f"strategy-compare-{state['selected_portfolio'].id if state['selected_portfolio'] else 'selection'}",
+    )
+
+
+def build_result_notes(result, language):
+    chart_data = result.chart_data or {}
+    scenario = result.scenario
+    rebalancing_labels = {
+        Scenario.REBALANCE_NONE: localized_text(language, "buy-and-hold без ребалансировки", "buy-and-hold with no rebalancing"),
+        Scenario.REBALANCE_MONTHLY: localized_text(language, "ежемесячная ребалансировка", "monthly rebalancing"),
+        Scenario.REBALANCE_QUARTERLY: localized_text(language, "квартальная ребалансировка", "quarterly rebalancing"),
+    }
+
+    notes = [
+        translate(
+            "run_note_iterations_steps",
+            language,
+            iterations=chart_data.get("iterations", scenario.iterations_count),
+            steps=chart_data.get("steps", "-"),
+        ),
+        translate("scenario_preset", language) + f": {scenario.get_preset_display()}.",
+        localized_text(language, "Режим стратегии", "Strategy mode") + f": {rebalancing_labels.get(scenario.rebalancing_frequency, scenario.get_rebalancing_frequency_display())}.",
+        translate("run_note_chart_consistency", language),
+    ]
+
+    if scenario.rebalancing_frequency != Scenario.REBALANCE_NONE:
+        notes.append(
+            localized_text(
+                language,
+                "Ступеньки на графике соответствуют датам ребалансировки: в эти моменты модель дискретно возвращает доли позиций к целевым весам портфеля.",
+                "Visible steps align with rebalance dates: at those points the model discretely returns position weights to the target portfolio mix.",
+            )
+        )
+
+    if to_decimal(chart_data.get("jump_intensity", 0)) > 0 and to_decimal(chart_data.get("jump_magnitude_percent", 0)) > 0:
+        notes.append(
+            localized_text(
+                language,
+                f"Jump-компонент добавляет редкие резкие движения внутри горизонта: в среднем около {chart_data.get('average_jump_events', 0)} событий на прогон с типичной амплитудой около {chart_data.get('jump_magnitude_percent', 0)}%.",
+                f"The jump component adds rare sharp moves inside the horizon: on average about {chart_data.get('average_jump_events', 0)} events per run with a typical amplitude near {chart_data.get('jump_magnitude_percent', 0)}%.",
+            )
+        )
+
+    return notes
+
+
+def get_rebalancing_label(value, language):
+    labels = {
+        Scenario.REBALANCE_NONE: localized_text(language, "Без ребалансировки", "Buy and hold"),
+        Scenario.REBALANCE_MONTHLY: localized_text(language, "Ежемесячная ребалансировка", "Monthly rebalance"),
+        Scenario.REBALANCE_QUARTERLY: localized_text(language, "Квартальная ребалансировка", "Quarterly rebalance"),
+    }
+    return labels.get(value, value or "-")
+
+
+def get_scenario_family_key(scenario):
+    return (
+        scenario.preset,
+        str(scenario.trend),
+        str(scenario.volatility),
+        str(scenario.noise_level),
+        str(scenario.market_shock),
+        str(scenario.currency_shock),
+        str(scenario.inflation_shock),
+        scenario.sector_target or "",
+        str(scenario.sector_shock),
+        str(scenario.interest_rate_shock),
+        str(scenario.jump_intensity),
+        str(scenario.jump_magnitude),
+        str(scenario.systematic_risk),
+        str(scenario.mean_reversion_strength),
+        int(scenario.time_horizon),
+        str(scenario.time_step),
+        int(scenario.iterations_count),
+    )
+
+
+def build_rebalancing_insights(comparison_results):
+    grouped_results = {}
+    for item in comparison_results:
+        grouped_results.setdefault(item["market_signature"], []).append(item)
+
+    insights = []
+    for group_items in grouped_results.values():
+        if len(group_items) < 2:
+            continue
+        baseline = next((item for item in group_items if item["rebalancing_frequency"] == Scenario.REBALANCE_NONE), None)
+        if baseline is None:
+            continue
+        for item in group_items:
+            if item["id"] == baseline["id"]:
+                continue
+            insights.append({
+                "scenario_name": item["scenario_name"],
+                "baseline_label": baseline["rebalancing_label"],
+                "target_label": item["rebalancing_label"],
+                "final_value_delta": item["final_value"] - baseline["final_value"],
+                "expected_return_delta": item["expected_return"] - baseline["expected_return"],
+                "drawdown_delta": item["max_drawdown"] - baseline["max_drawdown"],
+                "loss_probability_delta": item["probability_of_loss"] - baseline["probability_of_loss"],
+                "portfolio_unit_label": item["portfolio_unit_label"],
+            })
+    return insights
+
+
+def build_strategy_comparison_payload(results, language):
+    comparison_results = []
+    chart_series = []
+
+    for result in results:
+        metric_map = get_metric_map(result)
+        portfolio_unit_label = get_portfolio_unit_label(result.scenario.portfolio, language)
+        average_path = result.chart_data.get("average_path", [])
+        start_value = to_decimal(average_path[0] if average_path else 0)
+        normalized_path = []
+        for point in average_path:
+            point_decimal = to_decimal(point)
+            if start_value > 0:
+                normalized_path.append(float(((point_decimal / start_value) - Decimal("1")) * Decimal("100")))
+            else:
+                normalized_path.append(0.0)
+
+        rebalancing_label = get_rebalancing_label(result.scenario.rebalancing_frequency, language)
+        timestamp_label = timezone.localtime(result.execution_time).strftime("%Y-%m-%d %H:%M")
+        comparison_results.append({
+            "id": result.id,
+            "scenario_name": result.scenario.name,
+            "portfolio_name": result.scenario.portfolio.name,
+            "execution_time": result.execution_time,
+            "market_signature": get_scenario_family_key(result.scenario),
+            "rebalancing_frequency": result.scenario.rebalancing_frequency,
+            "rebalancing_label": rebalancing_label,
+            "selection_label": f"{result.scenario.name} · {rebalancing_label} · {timestamp_label}",
+            "portfolio_unit_label": portfolio_unit_label,
+            "expected_return": result.expected_return,
+            "final_value": result.final_value,
+            "volatility": result.portfolio_volatility,
+            "max_drawdown": result.max_drawdown,
+            "probability_of_loss": metric_map.get("Probability of Loss", Decimal("0")),
+            "probability_of_drawdown": metric_map.get("Probability of Drawdown > 10%", Decimal("0")),
+            "var_95": metric_map.get("VaR 95%", Decimal("0")),
+            "cvar_95": metric_map.get("CVaR 95%", Decimal("0")),
+            "sharpe_ratio": metric_map.get("Sharpe Ratio", Decimal("0")),
+        })
+        chart_series.append({
+            "label": f"{result.scenario.name} · {rebalancing_label} · {timezone.localtime(result.execution_time).strftime('%d.%m %H:%M')}",
+            "values": normalized_path,
+        })
+
+    metric_specs = [
+        (localized_text(language, "Режим стратегии", "Strategy mode"), lambda item: item["rebalancing_label"]),
+        (localized_text(language, "Средний итог", "Average final value"), lambda item: f"{format_display_number(item['final_value'], 2)} {item['portfolio_unit_label']}"),
+        (localized_text(language, "Ожидаемая доходность", "Expected return"), lambda item: f"{format_display_percent(item['expected_return'], 2)} %"),
+        (localized_text(language, "Волатильность", "Volatility"), lambda item: f"{format_display_percent(item['volatility'], 2)} %"),
+        (localized_text(language, "Максимальная просадка", "Max drawdown"), lambda item: f"{format_display_percent(item['max_drawdown'], 2)} %"),
+        (localized_text(language, "Вероятность убытка", "Probability of loss"), lambda item: f"{format_display_percent(item['probability_of_loss'], 2)} %"),
+        (localized_text(language, "Вероятность просадки > 10%", "Probability of drawdown > 10%"), lambda item: f"{format_display_percent(item['probability_of_drawdown'], 2)} %"),
+        ("VaR 95%", lambda item: f"{format_display_percent(item['var_95'], 2)} %"),
+        ("CVaR 95%", lambda item: f"{format_display_percent(item['cvar_95'], 2)} %"),
+        (localized_text(language, "Коэффициент Шарпа", "Sharpe ratio"), lambda item: format_display_number(item["sharpe_ratio"], 4)),
+    ]
+    comparison_rows = [
+        {"label": row_label, "values": [formatter(item) for item in comparison_results]}
+        for row_label, formatter in metric_specs
+    ]
+    return comparison_results, comparison_rows, chart_series, build_rebalancing_insights(comparison_results)
+
+
+@login_required
+def strategy_compare(request):
+    language = get_request_language(request)
+    portfolios_queryset = user_scope(request.user, Portfolio.objects.all())
+    results_queryset = user_scope(
+        request.user,
+        SimulationResult.objects.select_related("scenario", "scenario__portfolio").prefetch_related("risk_metrics"),
+        owner_lookup="scenario__user",
+    )
+
+    default_portfolio = None
+    if request.method == "GET" and not request.GET:
+        default_portfolio_id = (
+            results_queryset.order_by("-execution_time")
+            .values_list("scenario__portfolio_id", flat=True)
+            .first()
+        )
+        if default_portfolio_id:
+            default_portfolio = portfolios_queryset.filter(id=default_portfolio_id).first()
+
+    form = StrategyComparisonForm(
+        request.GET or None,
+        portfolios_queryset=portfolios_queryset,
+        language=language,
+        initial={"portfolio": default_portfolio.id} if default_portfolio else None,
+    )
+
+    selected_portfolio = None
+    comparison_results = []
+    comparison_rows = []
+    chart_series = []
+    available_results = []
+    selected_result_ids = set()
+    selection_submitted = request.GET.get("selection_mode") == "custom"
+    rebalancing_insights = []
+
+    if form.is_bound and form.is_valid():
+        selected_portfolio = form.cleaned_data["portfolio"]
+    elif not form.is_bound and default_portfolio:
+        selected_portfolio = default_portfolio
+
+    if selected_portfolio is not None:
+        portfolio_results = list(
+            results_queryset
+            .filter(scenario__portfolio=selected_portfolio)
+            .order_by("scenario__name", "scenario__rebalancing_frequency", "execution_time", "id")
+        )
+        raw_selected_ids = {
+            int(value)
+            for value in request.GET.getlist("results")
+            if str(value).isdigit()
+        }
+        if selection_submitted:
+            filtered_results = [result for result in portfolio_results if result.id in raw_selected_ids]
+            selected_result_ids = raw_selected_ids
+        else:
+            filtered_results = portfolio_results
+            selected_result_ids = {result.id for result in portfolio_results}
+
+        available_results = [
+            {
+                "id": result.id,
+                "label": f"{result.scenario.name} · {get_rebalancing_label(result.scenario.rebalancing_frequency, language)} · {timezone.localtime(result.execution_time).strftime('%Y-%m-%d %H:%M')}",
+                "checked": result.id in selected_result_ids,
+            }
+            for result in portfolio_results
+        ]
+        comparison_results, comparison_rows, chart_series, rebalancing_insights = build_strategy_comparison_payload(filtered_results, language)
+
+    return render(request, "riskapp/strategy_compare.html", {
+        "form": form,
+        "comparison_results": comparison_results,
+        "comparison_rows": comparison_rows,
+        "chart_series": chart_series,
+        "selected_portfolio": selected_portfolio,
+        "available_results": available_results,
+        "selected_result_ids": selected_result_ids,
+        "selection_submitted": selection_submitted,
+        "rebalancing_insights": rebalancing_insights,
+    })
+
+
+def build_result_notes(result, language):
+    chart_data = result.chart_data or {}
+    scenario = result.scenario
+    rebalancing_labels = {
+        Scenario.REBALANCE_NONE: localized_text(language, "buy-and-hold без ребалансировки", "buy-and-hold with no rebalancing"),
+        Scenario.REBALANCE_MONTHLY: localized_text(language, "ежемесячная ребалансировка", "monthly rebalancing"),
+        Scenario.REBALANCE_QUARTERLY: localized_text(language, "квартальная ребалансировка", "quarterly rebalancing"),
+    }
+    notes = [
+        translate(
+            "run_note_iterations_steps",
+            language,
+            iterations=chart_data.get("iterations", scenario.iterations_count),
+            steps=chart_data.get("steps", "-"),
+        ),
+        translate("scenario_preset", language) + f": {scenario.get_preset_display()}.",
+        localized_text(language, "Режим стратегии", "Strategy mode") + f": {rebalancing_labels.get(scenario.rebalancing_frequency, scenario.get_rebalancing_frequency_display())}.",
+        translate("run_note_chart_consistency", language),
+    ]
+    if scenario.rebalancing_frequency != Scenario.REBALANCE_NONE:
+        notes.append(
+            localized_text(
+                language,
+                "Ступеньки на графике соответствуют датам ребалансировки: в эти моменты модель дискретно возвращает доли позиций к целевым весам портфеля.",
+                "The visible steps mark rebalance dates: at those points the model discretely returns position weights to the target portfolio mix.",
+            )
+        )
+    return notes
+
+
 def build_strategy_comparison_payload(results, language):
     comparison_results = []
     chart_series = []
@@ -1719,6 +2729,32 @@ def result_detail(request, result_id):
     })
 
 
+@login_required
+def result_delete(request, result_id):
+    result = get_object_or_404(
+        user_scope(
+            request.user,
+            SimulationResult.objects.select_related("scenario", "scenario__portfolio"),
+            owner_lookup="scenario__user",
+        ),
+        id=result_id,
+    )
+    if request.method != "POST":
+        return redirect(reverse("riskapp:result_detail", args=[result.id]))
+
+    scenario_name = result.scenario.name
+    result.delete()
+    messages.success(
+        request,
+        localized_text(
+            get_request_language(request),
+            f"Результат сценария «{scenario_name}» удалён.",
+            f"Simulation result for '{scenario_name}' was deleted.",
+        ),
+    )
+    return redirect("riskapp:results")
+
+
 @admin_required
 def administrator_dashboard(request):
     users = (
@@ -1895,7 +2931,6 @@ def portfolio_operation_create(request, portfolio_id):
 
     if request.method == "POST" and form.is_valid():
         instrument = form.cleaned_data["instrument"]
-        price_per_unit = instrument.current_price
         try:
             operation, _ = record_trade_operation(
                 user=request.user,
@@ -1903,7 +2938,7 @@ def portfolio_operation_create(request, portfolio_id):
                 instrument=instrument,
                 operation_type=form.cleaned_data["operation_type"],
                 quantity=form.cleaned_data["quantity"],
-                price_per_unit=price_per_unit,
+                price_per_unit=instrument.current_price,
                 executed_at=form.cleaned_data["executed_at"],
                 comment=form.cleaned_data.get("comment", ""),
             )
@@ -1932,13 +2967,33 @@ def portfolio_operation_create(request, portfolio_id):
     )
     commission_preview = None
     current_price = None
+    execution_price_preview = None
+    slippage_preview = None
+    slippage_rate_preview = None
+    cash_snapshot = get_portfolio_cash_snapshot(portfolio)
+    cash_after_preview = None
     if selected_instrument:
         current_price = selected_instrument.current_price
         quantity_preview = form.data.get("quantity") if form.is_bound else form.initial.get("quantity") or 1
         try:
-            commission_preview = estimate_trade_commission(int(quantity_preview or 1), current_price)
+            quantity_preview = int(quantity_preview or 1)
         except (TypeError, ValueError):
-            commission_preview = estimate_trade_commission(1, current_price)
+            quantity_preview = 1
+        execution_price_preview, slippage_rate_preview = estimate_trade_execution_price(
+            selected_instrument,
+            requested_type,
+            current_price,
+            quantity_preview,
+        )
+        slippage_preview = estimate_trade_slippage_amount(
+            quantity_preview,
+            current_price,
+            execution_price_preview,
+        )
+        commission_preview = estimate_trade_commission(quantity_preview, execution_price_preview)
+        gross_preview = Decimal(quantity_preview) * execution_price_preview
+        signed_delta = gross_preview + commission_preview if requested_type == TradeOperation.TYPE_BUY else -(gross_preview - commission_preview)
+        cash_after_preview = cash_snapshot.balance - signed_delta
 
     return render(request, "riskapp/operation_form.html", {
         "portfolio": portfolio,
@@ -1948,6 +3003,11 @@ def portfolio_operation_create(request, portfolio_id):
         "positions_for_sale": positions_for_sale,
         "commission_preview": commission_preview,
         "current_price": current_price,
+        "execution_price_preview": execution_price_preview,
+        "slippage_preview": slippage_preview,
+        "slippage_rate_preview": slippage_rate_preview,
+        "cash_snapshot": cash_snapshot,
+        "cash_after_preview": cash_after_preview,
     })
 
 
@@ -2008,7 +3068,11 @@ def portfolio_add_position(request, portfolio_id):
             ),
             "ticker": instrument.ticker,
             "quantity": position.quantity if position else 0,
+            "quoted_price": str(operation.quoted_price),
+            "execution_price": str(operation.price_per_unit),
+            "slippage_amount": str(operation.slippage_amount),
             "commission": str(operation.commission),
+            "cash_balance_after": str(operation.cash_balance_after) if operation.cash_balance_after is not None else "",
         })
 
     next_url = request.POST.get("next") or request.META.get("HTTP_REFERER")

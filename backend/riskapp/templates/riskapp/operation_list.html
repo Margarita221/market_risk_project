@@ -11,11 +11,9 @@
             <h1>{% if ui_language == "ru" %}История сделок по портфелю{% else %}Portfolio trade history{% endif %}</h1>
             <p class="muted">
                 {% if ui_language == "ru" %}
-                    Здесь хранится история покупок и продаж, из которой формируется текущая структура портфеля.
-                    Журнал отдельно показывает цену за одну бумагу и полную сумму сделки, чтобы операции было проще проверять вручную.
+                    Журнал показывает полную механику сделки: котировку, цену исполнения, проскальзывание, комиссию, чистый итог и денежный остаток после операции.
                 {% else %}
-                    This journal stores buys and sells that build the current portfolio structure.
-                    It separates unit price from full trade amount so each operation is easy to verify.
+                    The journal shows the full trade mechanics: quote, execution price, slippage, commission, net result, and cash balance after the operation.
                 {% endif %}
             </p>
         </div>
@@ -28,23 +26,38 @@
 </section>
 
 <section class="grid">
-    <article class="card span-3">
+    <article class="card span-2">
         <div class="section-kicker">{% if ui_language == "ru" %}Покупки{% else %}Buys{% endif %}</div>
         <div class="metric">{{ operations_summary.buy_count }}</div>
     </article>
-    <article class="card span-3">
+    <article class="card span-2">
         <div class="section-kicker">{% if ui_language == "ru" %}Продажи{% else %}Sells{% endif %}</div>
         <div class="metric">{{ operations_summary.sell_count }}</div>
     </article>
-    <article class="card span-3">
+    <article class="card span-2">
+        <div class="section-kicker">{% if ui_language == "ru" %}Проскальзывание{% else %}Slippage{% endif %}</div>
+        <div class="metric">{{ operations_summary.total_slippage|money_value:2 }}</div>
+        <div class="metric-note">{{ portfolio_unit_label }}</div>
+    </article>
+    <article class="card span-2">
         <div class="section-kicker">{% if ui_language == "ru" %}Комиссии{% else %}Commissions{% endif %}</div>
         <div class="metric">{{ operations_summary.total_commission|money_value:2 }}</div>
         <div class="metric-note">{{ portfolio_unit_label }}</div>
     </article>
-    <article class="card span-3">
+    <article class="card span-2">
         <div class="section-kicker">{% if ui_language == "ru" %}Реализованный результат{% else %}Realized P/L{% endif %}</div>
         <div class="metric">{{ operations_summary.realized_total|money_value:2 }}</div>
         <div class="metric-note">{{ portfolio_unit_label }}</div>
+    </article>
+    <article class="card span-2">
+        <div class="section-kicker">{% if ui_language == "ru" %}Денежный остаток{% else %}Cash balance{% endif %}</div>
+        <div class="metric">{{ cash_snapshot.balance|money_value:2 }}</div>
+        <div class="metric-note">
+            {{ cash_snapshot.currency }}
+            {% if not cash_snapshot.reliable %}
+                · {% if ui_language == "ru" %}оценочно{% else %}estimated{% endif %}
+            {% endif %}
+        </div>
     </article>
 
     <article class="card span-12">
@@ -67,11 +80,14 @@
                             <th>{% if ui_language == "ru" %}Инструмент{% else %}Instrument{% endif %}</th>
                             <th>{% if ui_language == "ru" %}Тип сделки{% else %}Trade type{% endif %}</th>
                             <th>{% if ui_language == "ru" %}Количество{% else %}Quantity{% endif %}</th>
-                            <th>{% if ui_language == "ru" %}Цена за 1 шт.{% else %}Unit price{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Котировка{% else %}Quote{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Цена исполнения{% else %}Execution price{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Проскальзывание{% else %}Slippage{% endif %}</th>
                             <th>{% if ui_language == "ru" %}Сумма сделки{% else %}Gross amount{% endif %}</th>
                             <th>{% if ui_language == "ru" %}Комиссия{% else %}Commission{% endif %}</th>
                             <th>{% if ui_language == "ru" %}Итог после комиссии{% else %}Net amount{% endif %}</th>
                             <th>{% if ui_language == "ru" %}Реализованный P/L{% else %}Realized P/L{% endif %}</th>
+                            <th>{% if ui_language == "ru" %}Кэш после сделки{% else %}Cash after trade{% endif %}</th>
                             <th>{% if ui_language == "ru" %}Комментарий{% else %}Comment{% endif %}</th>
                         </tr>
                     </thead>
@@ -92,13 +108,25 @@
                                         {% endif %}
                                     </td>
                                     <td>{{ operation.quantity }}</td>
+                                    <td>{{ row.quoted_price|money_by_currency:row.quoted_unit }} <span class="inline-unit">{{ row.quoted_unit }}</span></td>
                                     <td>{{ operation.price_per_unit|money_by_currency:row.price_currency }} <span class="inline-unit">{{ row.price_currency }}</span></td>
+                                    <td>
+                                        {{ row.slippage_amount|money_by_currency:row.slippage_unit }} <span class="inline-unit">{{ row.slippage_unit }}</span>
+                                        <br><span class="muted">{{ operation.slippage_rate|percent_value:2 }}%</span>
+                                    </td>
                                     <td>{{ row.gross_amount|money_by_currency:row.gross_unit }} <span class="inline-unit">{{ row.gross_unit }}</span></td>
                                     <td>{{ row.commission_amount|money_by_currency:row.commission_unit }} <span class="inline-unit">{{ row.commission_unit }}</span></td>
                                     <td>{{ row.net_amount|money_by_currency:row.net_unit }} <span class="inline-unit">{{ row.net_unit }}</span></td>
                                     <td>
                                         {% if row.realized_pnl != None %}
                                             {{ row.realized_pnl|money_by_currency:row.realized_unit }} <span class="inline-unit">{{ row.realized_unit }}</span>
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if operation.cash_balance_after != None %}
+                                            {{ operation.cash_balance_after|money_value:2 }} <span class="inline-unit">{{ portfolio_unit_label }}</span>
                                         {% else %}
                                             -
                                         {% endif %}

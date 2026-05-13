@@ -23,10 +23,29 @@ def build_sector_choices(language="ru", include_all=False, empty_label="--------
         if sector not in values:
             values.append(sector)
     values = sorted(value for value in values if value)
-    choices = [(value, value) for value in values]
+    label_map = {
+        Instrument.SECTOR_EQUITIES: translate("sector_equities", language),
+        Instrument.SECTOR_BONDS: translate("sector_bonds", language),
+        Instrument.SECTOR_FUNDS: translate("sector_funds", language),
+    }
+    choices = [(value, label_map.get(value, value)) for value in values]
     if include_all:
         return [("", translate("all_sectors", language))] + choices
     return [("", empty_label)] + choices
+
+
+def build_rebalancing_choices(language="ru"):
+    if language == "ru":
+        return [
+            (Scenario.REBALANCE_NONE, "Без ребалансировки"),
+            (Scenario.REBALANCE_MONTHLY, "Ежемесячная ребалансировка"),
+            (Scenario.REBALANCE_QUARTERLY, "Квартальная ребалансировка"),
+        ]
+    return [
+        (Scenario.REBALANCE_NONE, "Buy and hold"),
+        (Scenario.REBALANCE_MONTHLY, "Monthly rebalance"),
+        (Scenario.REBALANCE_QUARTERLY, "Quarterly rebalance"),
+    ]
 
 
 def validate_time_step_vs_horizon(cleaned_data, language):
@@ -49,6 +68,8 @@ DISPLAY_DECIMALS = {
     "inflation_shock": 2,
     "sector_shock": 2,
     "interest_rate_shock": 2,
+    "jump_intensity": 2,
+    "jump_magnitude": 2,
     "systematic_risk": 2,
     "mean_reversion_strength": 2,
     "time_step": 0,
@@ -63,6 +84,8 @@ SCENARIO_NUMERIC_LIMITS = {
     "inflation_shock": (Decimal("-0.05"), Decimal("0.25")),
     "sector_shock": (Decimal("-0.20"), Decimal("0.20")),
     "interest_rate_shock": (Decimal("-0.10"), Decimal("0.10")),
+    "jump_intensity": (Decimal("0.00"), Decimal("5.00")),
+    "jump_magnitude": (Decimal("0.00"), Decimal("0.30")),
     "systematic_risk": (Decimal("0.00"), Decimal("1.00")),
     "mean_reversion_strength": (Decimal("0.00"), Decimal("0.50")),
 }
@@ -182,6 +205,22 @@ SCENARIO_FIELD_WIDGETS = {
         "data-slider-max": "0.1",
         "data-slider-step": "0.01",
     }),
+    "jump_intensity": forms.NumberInput(attrs={
+        "step": "0.1",
+        "min": "0",
+        "max": "5",
+        "data-slider-min": "0",
+        "data-slider-max": "5",
+        "data-slider-step": "0.1",
+    }),
+    "jump_magnitude": forms.NumberInput(attrs={
+        "step": "0.01",
+        "min": "0",
+        "max": "0.3",
+        "data-slider-min": "0",
+        "data-slider-max": "0.3",
+        "data-slider-step": "0.01",
+    }),
     "systematic_risk": forms.NumberInput(attrs={
         "step": "0.01",
         "min": "0",
@@ -236,6 +275,8 @@ SCENARIO_PRESETS = {
         "sector_target": "",
         "sector_shock": "0.000000",
         "interest_rate_shock": "0.000000",
+        "jump_intensity": "0.200",
+        "jump_magnitude": "0.040000",
         "systematic_risk": "0.5500",
         "mean_reversion_strength": "0.1200",
         "time_horizon": 365,
@@ -253,6 +294,8 @@ SCENARIO_PRESETS = {
         "sector_target": "Equities",
         "sector_shock": "0.020000",
         "interest_rate_shock": "-0.010000",
+        "jump_intensity": "0.250",
+        "jump_magnitude": "0.050000",
         "systematic_risk": "0.5000",
         "mean_reversion_strength": "0.1000",
         "time_horizon": 365,
@@ -270,6 +313,8 @@ SCENARIO_PRESETS = {
         "sector_target": "Equities",
         "sector_shock": "-0.040000",
         "interest_rate_shock": "0.015000",
+        "jump_intensity": "0.600",
+        "jump_magnitude": "0.070000",
         "systematic_risk": "0.6000",
         "mean_reversion_strength": "0.1500",
         "time_horizon": 365,
@@ -287,6 +332,8 @@ SCENARIO_PRESETS = {
         "sector_target": "Equities",
         "sector_shock": "-0.070000",
         "interest_rate_shock": "0.030000",
+        "jump_intensity": "1.100",
+        "jump_magnitude": "0.100000",
         "systematic_risk": "0.7500",
         "mean_reversion_strength": "0.1800",
         "time_horizon": 240,
@@ -304,6 +351,8 @@ SCENARIO_PRESETS = {
         "sector_target": "Equities",
         "sector_shock": "-0.120000",
         "interest_rate_shock": "0.050000",
+        "jump_intensity": "1.600",
+        "jump_magnitude": "0.150000",
         "systematic_risk": "0.8800",
         "mean_reversion_strength": "0.2200",
         "time_horizon": 180,
@@ -709,6 +758,8 @@ class ScenarioForm(forms.ModelForm):
         self.language = kwargs.pop("language", "ru")
         super().__init__(*args, **kwargs)
         self._configure_sector_choices()
+        self.fields["preset"].choices = build_preset_choices(self.language)
+        self.fields["rebalancing_frequency"].choices = build_rebalancing_choices(self.language)
         apply_scenario_numeric_limits(self)
         apply_scenario_display_precision(self)
         for field_name in (
@@ -720,6 +771,8 @@ class ScenarioForm(forms.ModelForm):
             "sector_target",
             "sector_shock",
             "interest_rate_shock",
+            "jump_intensity",
+            "jump_magnitude",
             "systematic_risk",
             "mean_reversion_strength",
         ):
@@ -742,6 +795,8 @@ class ScenarioForm(forms.ModelForm):
             "sector_target",
             "sector_shock",
             "interest_rate_shock",
+            "jump_intensity",
+            "jump_magnitude",
             "systematic_risk",
             "mean_reversion_strength",
             "time_horizon",
@@ -762,6 +817,8 @@ class ScenarioForm(forms.ModelForm):
         cleaned_data["sector_target"] = cleaned_data.get("sector_target") or ""
         cleaned_data["sector_shock"] = cleaned_data.get("sector_shock") or Decimal("0")
         cleaned_data["interest_rate_shock"] = cleaned_data.get("interest_rate_shock") or Decimal("0")
+        cleaned_data["jump_intensity"] = cleaned_data.get("jump_intensity") or Decimal("0.200")
+        cleaned_data["jump_magnitude"] = cleaned_data.get("jump_magnitude") or Decimal("0.040000")
         cleaned_data["systematic_risk"] = cleaned_data.get("systematic_risk") or Decimal("0.6500")
         cleaned_data["mean_reversion_strength"] = cleaned_data.get("mean_reversion_strength") or Decimal("0.1500")
         validate_scenario_numeric_limits(cleaned_data, self.language)
@@ -782,6 +839,8 @@ class ScenarioManagementForm(forms.ModelForm):
         self.language = kwargs.pop("language", "ru")
         super().__init__(*args, **kwargs)
         self._configure_sector_choices()
+        self.fields["preset"].choices = build_preset_choices(self.language)
+        self.fields["rebalancing_frequency"].choices = build_rebalancing_choices(self.language)
         apply_scenario_numeric_limits(self)
         apply_scenario_display_precision(self)
         if portfolios_queryset is not None:
@@ -795,6 +854,8 @@ class ScenarioManagementForm(forms.ModelForm):
             "sector_target",
             "sector_shock",
             "interest_rate_shock",
+            "jump_intensity",
+            "jump_magnitude",
             "systematic_risk",
             "mean_reversion_strength",
         ):
@@ -818,6 +879,8 @@ class ScenarioManagementForm(forms.ModelForm):
             "sector_target",
             "sector_shock",
             "interest_rate_shock",
+            "jump_intensity",
+            "jump_magnitude",
             "systematic_risk",
             "mean_reversion_strength",
             "time_horizon",
@@ -838,8 +901,91 @@ class ScenarioManagementForm(forms.ModelForm):
         cleaned_data["sector_target"] = cleaned_data.get("sector_target") or ""
         cleaned_data["sector_shock"] = cleaned_data.get("sector_shock") or Decimal("0")
         cleaned_data["interest_rate_shock"] = cleaned_data.get("interest_rate_shock") or Decimal("0")
+        cleaned_data["jump_intensity"] = cleaned_data.get("jump_intensity") or Decimal("0.200")
+        cleaned_data["jump_magnitude"] = cleaned_data.get("jump_magnitude") or Decimal("0.040000")
         cleaned_data["systematic_risk"] = cleaned_data.get("systematic_risk") or Decimal("0.6500")
         cleaned_data["mean_reversion_strength"] = cleaned_data.get("mean_reversion_strength") or Decimal("0.1500")
         validate_scenario_numeric_limits(cleaned_data, self.language)
         validate_time_step_vs_horizon(cleaned_data, self.language)
         return cleaned_data
+
+
+def build_rebalancing_choices(language="ru"):
+    if language == "ru":
+        return [
+            (Scenario.REBALANCE_NONE, "Без ребалансировки"),
+            (Scenario.REBALANCE_MONTHLY, "Ежемесячная ребалансировка"),
+            (Scenario.REBALANCE_QUARTERLY, "Квартальная ребалансировка"),
+        ]
+    return [
+        (Scenario.REBALANCE_NONE, "Buy and hold"),
+        (Scenario.REBALANCE_MONTHLY, "Monthly rebalance"),
+        (Scenario.REBALANCE_QUARTERLY, "Quarterly rebalance"),
+    ]
+
+
+def build_preset_choices(language="ru"):
+    if language == "ru":
+        return [
+            (Scenario.PRESET_CUSTOM, "Пользовательский"),
+            (Scenario.PRESET_BASE, "Базовый"),
+            (Scenario.PRESET_OPTIMISTIC, "Оптимистичный"),
+            (Scenario.PRESET_PESSIMISTIC, "Пессимистичный"),
+            (Scenario.PRESET_STRESS, "Стрессовый"),
+            (Scenario.PRESET_CRISIS, "Кризисный"),
+        ]
+    return Scenario.PRESET_CHOICES
+
+
+def build_rebalancing_choices(language="ru"):
+    if language == "ru":
+        return [
+            (Scenario.REBALANCE_NONE, "Без ребалансировки"),
+            (Scenario.REBALANCE_MONTHLY, "Ежемесячная ребалансировка"),
+            (Scenario.REBALANCE_QUARTERLY, "Квартальная ребалансировка"),
+        ]
+    return [
+        (Scenario.REBALANCE_NONE, "Buy and hold"),
+        (Scenario.REBALANCE_MONTHLY, "Monthly rebalance"),
+        (Scenario.REBALANCE_QUARTERLY, "Quarterly rebalance"),
+    ]
+
+
+def build_preset_choices(language="ru"):
+    if language == "ru":
+        return [
+            (Scenario.PRESET_CUSTOM, "Пользовательский"),
+            (Scenario.PRESET_BASE, "Базовый"),
+            (Scenario.PRESET_OPTIMISTIC, "Оптимистичный"),
+            (Scenario.PRESET_PESSIMISTIC, "Пессимистичный"),
+            (Scenario.PRESET_STRESS, "Стрессовый"),
+            (Scenario.PRESET_CRISIS, "Кризисный"),
+        ]
+    return list(Scenario.PRESET_CHOICES)
+
+
+def build_rebalancing_choices(language="ru"):
+    if language == "ru":
+        return [
+            (Scenario.REBALANCE_NONE, "Без ребалансировки"),
+            (Scenario.REBALANCE_MONTHLY, "Ежемесячная ребалансировка"),
+            (Scenario.REBALANCE_QUARTERLY, "Квартальная ребалансировка"),
+        ]
+    return [
+        (Scenario.REBALANCE_NONE, "Buy and hold"),
+        (Scenario.REBALANCE_MONTHLY, "Monthly rebalance"),
+        (Scenario.REBALANCE_QUARTERLY, "Quarterly rebalance"),
+    ]
+
+
+def build_preset_choices(language="ru"):
+    if language == "ru":
+        return [
+            (Scenario.PRESET_CUSTOM, "Пользовательский"),
+            (Scenario.PRESET_BASE, "Базовый"),
+            (Scenario.PRESET_OPTIMISTIC, "Оптимистичный"),
+            (Scenario.PRESET_PESSIMISTIC, "Пессимистичный"),
+            (Scenario.PRESET_STRESS, "Стрессовый"),
+            (Scenario.PRESET_CRISIS, "Кризисный"),
+        ]
+    return list(Scenario.PRESET_CHOICES)

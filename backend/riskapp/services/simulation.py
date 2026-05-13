@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
-from math import ceil, sqrt
+from math import ceil, exp, sqrt
 import random
 from statistics import mean, median, pstdev
 
@@ -15,10 +15,15 @@ DECIMAL_6 = Decimal("0.000001")
 MAX_CHART_POINTS = 160
 SAMPLE_PATHS_LIMIT = 7
 CRITICAL_DRAWDOWN_LEVEL = 0.10
+SHARED_FACTOR_VARIANCE_SHARES = {
+    "market": 0.55,
+    "sector": 0.30,
+    "type": 0.15,
+}
 INSTRUMENT_TYPE_PROFILES = {
-    "stock": {"trend": 1.00, "volatility": 1.10, "noise": 1.00, "inflation": 0.35},
-    "bond": {"trend": 0.55, "volatility": 0.35, "noise": 0.40, "inflation": 0.85},
-    "etf": {"trend": 0.90, "volatility": 0.80, "noise": 0.70, "inflation": 0.50},
+    "stock": {"trend": 1.00, "volatility": 1.10, "noise": 1.00, "inflation": 0.35, "jump": 1.00},
+    "bond": {"trend": 0.55, "volatility": 0.35, "noise": 0.40, "inflation": 0.85, "jump": 0.45},
+    "etf": {"trend": 0.90, "volatility": 0.80, "noise": 0.70, "inflation": 0.50, "jump": 0.80},
 }
 
 
@@ -117,6 +122,18 @@ def get_instrument_profile(position):
     )
 
 
+def get_position_sector_key(position):
+    sector = (position.instrument.sector or "").strip().lower()
+    if sector:
+        return sector
+    return f"type:{get_position_type_key(position)}"
+
+
+def get_position_type_key(position):
+    instrument_type = position.instrument.normalized_type or position.instrument.instrument_type or "stock"
+    return instrument_type.strip().lower()
+
+
 def get_initial_position_weights(positions, base_currency):
     raw_values = []
     total_value = Decimal("0")
@@ -180,12 +197,83 @@ def clamp(value, minimum, maximum):
     return max(minimum, min(value, maximum))
 
 
+def get_factor_scales(systematic_risk):
+    bounded_risk = clamp(systematic_risk, 0.0, 1.0)
+    shared_variance = bounded_risk * 0.95
+    idiosyncratic_variance = max(0.0, 1.0 - shared_variance)
+    return {
+        factor_name: sqrt(shared_variance * share)
+        for factor_name, share in SHARED_FACTOR_VARIANCE_SHARES.items()
+    } | {
+        "idiosyncratic": sqrt(idiosyncratic_variance),
+    }
+
+
+def build_iteration_factor_paths(positions, steps, generator):
+    sector_keys = {get_position_sector_key(position) for position in positions}
+    type_keys = {get_position_type_key(position) for position in positions}
+    return {
+        "market": [generator.gauss(0, 1) for _ in range(steps)],
+        "sector": {
+            key: [generator.gauss(0, 1) for _ in range(steps)]
+            for key in sector_keys
+        },
+        "type": {
+            key: [generator.gauss(0, 1) for _ in range(steps)]
+            for key in type_keys
+        },
+    }
+
+
+def get_jump_downside_bias(annual_trend, market_shock, inflation_shock, interest_rate_shock):
+    bias = 0.50
+    bias += max(-annual_trend, 0.0) * 0.65
+    bias += max(-market_shock, 0.0) * 0.90
+    bias += max(inflation_shock, 0.0) * 0.10
+    bias += max(interest_rate_shock, 0.0) * 0.10
+    bias -= max(annual_trend, 0.0) * 0.25
+    return clamp(bias, 0.25, 0.85)
+
+
+def build_jump_path(steps, step_days, generator, jump_intensity, jump_magnitude, jump_downside_bias):
+    if jump_intensity <= 0 or jump_magnitude <= 0:
+        return [0.0] * steps, 0
+
+    per_step_probability = 1 - exp(-(jump_intensity * step_days / 365))
+    jump_path = []
+    jump_events_count = 0
+    jump_sigma = max(jump_magnitude * 0.35, 0.005)
+
+    for _ in range(steps):
+        if generator.random() < per_step_probability:
+            direction = -1.0 if generator.random() < jump_downside_bias else 1.0
+            sampled_magnitude = max(0.0, generator.gauss(jump_magnitude, jump_sigma))
+            capped_magnitude = min(sampled_magnitude, jump_magnitude * 2.25)
+            jump_path.append(direction * capped_magnitude)
+            jump_events_count += 1
+        else:
+            jump_path.append(0.0)
+
+    return jump_path, jump_events_count
+
+
 def get_rebalance_interval_steps(rebalancing_frequency, step_days):
     if rebalancing_frequency == Scenario.REBALANCE_MONTHLY:
         return max(1, round(30 / step_days))
     if rebalancing_frequency == Scenario.REBALANCE_QUARTERLY:
         return max(1, round(90 / step_days))
     return None
+
+
+def build_rebalance_marker_days(steps, step_days, interval_steps):
+    if not interval_steps or interval_steps <= 0:
+        return []
+    path_length = steps + 1
+    rebalance_indexes = range(interval_steps, path_length, interval_steps)
+    return [
+        int(round(rebalance_index * step_days))
+        for rebalance_index in rebalance_indexes
+    ]
 
 
 def apply_rebalancing(position_paths, target_weights, interval_steps):
@@ -225,10 +313,14 @@ def build_instrument_path(
     inflation_per_step,
     sector_shock,
     interest_rate_shock,
-    systematic_risk,
     mean_reversion_strength,
     steps,
     generator,
+    factor_scales,
+    market_factor_path,
+    sector_factor_path,
+    type_factor_path,
+    jump_path,
 ):
     values = [start_value]
     current_value = start_value
@@ -236,6 +328,7 @@ def build_instrument_path(
     profile_volatility = profile["volatility"]
     profile_noise = profile["noise"]
     profile_inflation = profile["inflation"]
+    profile_jump = profile["jump"]
     shock_weights = build_shock_weights(steps)
     total_initial_shock = clamp(
         market_shock + currency_shock + sector_shock + interest_rate_shock,
@@ -246,13 +339,27 @@ def build_instrument_path(
     previous_return = target_return
 
     for step_index in range(steps):
-        market_component = generator.gauss(
-            0,
-            volatility_per_step * profile_volatility,
+        market_component = (
+            market_factor_path[step_index]
+            * volatility_per_step
+            * profile_volatility
+            * factor_scales["market"]
+        )
+        sector_component = (
+            sector_factor_path[step_index]
+            * volatility_per_step
+            * profile_volatility
+            * factor_scales["sector"]
+        )
+        type_component = (
+            type_factor_path[step_index]
+            * volatility_per_step
+            * profile_volatility
+            * factor_scales["type"]
         )
         idiosyncratic_component = generator.gauss(
             0,
-            volatility_per_step * profile_volatility * profile_noise,
+            volatility_per_step * profile_volatility * profile_noise * factor_scales["idiosyncratic"],
         )
         noise_component = generator.uniform(
             -noise_per_step * profile_noise,
@@ -260,13 +367,16 @@ def build_instrument_path(
         )
         period_return = (
             target_return
-            + systematic_risk * market_component
-            + (1 - systematic_risk) * idiosyncratic_component
+            + market_component
+            + sector_component
+            + type_component
+            + idiosyncratic_component
             + noise_component
         )
         period_return += income_yield_per_step
         period_return += mean_reversion_strength * (target_return - previous_return)
         period_return -= inflation_per_step * profile_inflation
+        period_return += jump_path[step_index] * profile_jump
         if step_index < len(shock_weights):
             period_return += total_initial_shock * shock_weights[step_index]
         current_value = max(current_value * (1 + period_return), 0.0)
@@ -301,6 +411,8 @@ def run_scenario_simulation(scenario_id, seed=None):
     sector_target = scenario.sector_target or ""
     sector_shock = float(scenario.sector_shock)
     interest_rate_shock = float(scenario.interest_rate_shock)
+    jump_intensity = float(scenario.jump_intensity)
+    jump_magnitude = float(scenario.jump_magnitude)
     systematic_risk = float(scenario.systematic_risk)
     mean_reversion_strength = float(scenario.mean_reversion_strength)
     rebalancing_frequency = scenario.rebalancing_frequency or Scenario.REBALANCE_NONE
@@ -311,10 +423,19 @@ def run_scenario_simulation(scenario_id, seed=None):
     base_currency = normalize_currency_code(scenario.portfolio.base_currency)
     target_weights = get_initial_position_weights(positions, base_currency)
     rebalance_interval_steps = get_rebalance_interval_steps(rebalancing_frequency, step_days)
+    factor_scales = get_factor_scales(systematic_risk)
+    rebalancing_marker_days = build_rebalance_marker_days(steps, step_days, rebalance_interval_steps)
+    jump_downside_bias = get_jump_downside_bias(
+        annual_trend=float(scenario.trend),
+        market_shock=market_shock,
+        inflation_shock=float(scenario.inflation_shock),
+        interest_rate_shock=interest_rate_shock,
+    )
 
     final_values = []
     iteration_returns = []
     max_drawdowns = []
+    jump_event_counts = []
     path_sums = [0.0] * (steps + 1)
     position_path_sums = {
         position.id: [0.0] * (steps + 1)
@@ -326,6 +447,16 @@ def run_scenario_simulation(scenario_id, seed=None):
 
     for _ in range(iterations_count):
         position_paths = []
+        iteration_factors = build_iteration_factor_paths(positions, steps, generator)
+        jump_path, jump_events_count = build_jump_path(
+            steps=steps,
+            step_days=step_days,
+            generator=generator,
+            jump_intensity=jump_intensity,
+            jump_magnitude=jump_magnitude,
+            jump_downside_bias=jump_downside_bias,
+        )
+        jump_event_counts.append(jump_events_count)
 
         for position in positions:
             raw_position_start_value = Decimal(position.quantity) * Decimal(position.instrument.current_price)
@@ -351,20 +482,26 @@ def run_scenario_simulation(scenario_id, seed=None):
                 inflation_per_step=inflation_per_step,
                 sector_shock=get_sector_multiplier(position, sector_target, sector_shock),
                 interest_rate_shock=get_interest_rate_multiplier(position, interest_rate_shock),
-                systematic_risk=systematic_risk,
                 mean_reversion_strength=mean_reversion_strength,
                 steps=steps,
                 generator=generator,
+                factor_scales=factor_scales,
+                market_factor_path=iteration_factors["market"],
+                sector_factor_path=iteration_factors["sector"][get_position_sector_key(position)],
+                type_factor_path=iteration_factors["type"][get_position_type_key(position)],
+                jump_path=jump_path,
             )
             position_paths.append(position_path)
 
+        apply_rebalancing(position_paths, target_weights, rebalance_interval_steps)
+
+        for position, position_path in zip(positions, position_paths):
             for index, value in enumerate(position_path):
                 position_path_sums[position.id][index] += value
 
             if position.id not in position_sample_paths:
                 position_sample_paths[position.id] = position_path
 
-        apply_rebalancing(position_paths, target_weights, rebalance_interval_steps)
         portfolio_path = combine_paths(position_paths)
         final_value = portfolio_path[-1]
         final_values.append(final_value)
@@ -403,6 +540,7 @@ def run_scenario_simulation(scenario_id, seed=None):
     )
     percentile_5_final_value = percentile(sorted_final_values, 0.05)
     percentile_95_final_value = percentile(sorted_final_values, 0.95)
+    average_jump_events = mean(jump_event_counts) if jump_event_counts else 0.0
 
     average_path = [value / iterations_count for value in path_sums]
     average_drawdown_path = [value / iterations_count for value in drawdown_path_sums]
@@ -449,13 +587,15 @@ def run_scenario_simulation(scenario_id, seed=None):
         status="completed",
         comment=(
             f"Simulated {iterations_count} iterations with {steps} steps. "
-            f"Portfolio instruments move separately under a shared market factor "
-            f"({quantize_decimal(systematic_risk)}), market shock {quantize_decimal(market_shock)} "
+            f"Portfolio instruments move under layered shared factors: market, sector, and instrument type "
+            f"with overall systematic risk {quantize_decimal(systematic_risk)}, market shock {quantize_decimal(market_shock)} "
             f"currency shock {quantize_decimal(currency_shock)} for non-base-currency assets, "
             f"inflation shock {quantize_decimal(scenario.inflation_shock)} "
             f"with mean reversion {quantize_decimal(mean_reversion_strength, Decimal('0.0001'))}, "
             f"sector shock {quantize_decimal(sector_shock)} for sector '{sector_target or 'all'}', "
             f"interest-rate shock {quantize_decimal(interest_rate_shock)} for bonds, "
+            f"jump intensity {quantize_decimal(jump_intensity, Decimal('0.001'))} events/year "
+            f"with jump magnitude {quantize_decimal(jump_magnitude)} and downside bias {quantize_decimal(jump_downside_bias, Decimal('0.0001'))}, "
             f"annual income yields from coupons or dividends, "
             f"and rebalancing mode '{rebalancing_frequency}'."
         ),
@@ -487,9 +627,17 @@ def run_scenario_simulation(scenario_id, seed=None):
             "sector_target": sector_target,
             "sector_shock_percent": float(quantize_decimal(sector_shock * 100)),
             "interest_rate_shock_percent": float(quantize_decimal(interest_rate_shock * 100)),
+            "jump_intensity": float(quantize_decimal(jump_intensity, Decimal("0.001"))),
+            "jump_magnitude_percent": float(quantize_decimal(jump_magnitude * 100)),
+            "average_jump_events": float(quantize_decimal(average_jump_events, Decimal("0.01"))),
             "systematic_risk_percent": float(quantize_decimal(systematic_risk * 100)),
+            "shared_factor_mix_percent": {
+                factor_name: float(quantize_decimal(share * 100))
+                for factor_name, share in SHARED_FACTOR_VARIANCE_SHARES.items()
+            },
             "mean_reversion_strength_percent": float(quantize_decimal(mean_reversion_strength * 100)),
             "rebalancing_frequency": rebalancing_frequency,
+            "rebalancing_marker_days": rebalancing_marker_days,
             "base_currency": base_currency,
             "steps": steps,
             "iterations": iterations_count,

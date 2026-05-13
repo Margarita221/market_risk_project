@@ -27,6 +27,18 @@ TYPE_TO_MARKET = {
     Instrument.TYPE_BOND: "bonds",
     Instrument.TYPE_ETF: "etf",
 }
+ETF_SNAPSHOT_MARKET = "shares"
+ETF_BOARD_CODES = (
+    "TQTF",
+    "TQIF",
+    "TQFD",
+    "TQFE",
+    "TQTD",
+    "TQTE",
+    "TQTY",
+    "TQTH",
+    "TQTC",
+)
 PRICE_FIELDS_PRIORITY = (
     "LAST",
     "MARKETPRICE",
@@ -165,9 +177,14 @@ def _history_timestamp_from_date(trade_date):
     return timezone.make_aware(datetime.combine(trade_date, time(hour=12, minute=0)), timezone_value)
 
 
-def fetch_market_snapshot(market: str, start: int = 0) -> list[dict]:
+def fetch_market_snapshot(market: str, start: int = 0, board: str | None = None) -> list[dict]:
+    actual_market = ETF_SNAPSHOT_MARKET if market == "etf" and board else market
+    if board:
+        path = f"/engines/stock/markets/{actual_market}/boards/{board}/securities.json"
+    else:
+        path = f"/engines/stock/markets/{actual_market}/securities.json"
     payload = _fetch_json(
-        f"/engines/stock/markets/{market}/securities.json",
+        path,
         {
             "iss.meta": "off",
             "iss.only": "securities,marketdata",
@@ -195,7 +212,14 @@ def fetch_market_snapshot(market: str, start: int = 0) -> list[dict]:
     return combined
 
 
-def fetch_market_history_page(market: str, ticker: str, start: int = 0, from_date=None, till_date=None) -> list[dict]:
+def fetch_market_history_page(
+    market: str,
+    ticker: str,
+    start: int = 0,
+    from_date=None,
+    till_date=None,
+    board: str | None = None,
+) -> list[dict]:
     params = {
         "iss.meta": "off",
         "iss.only": "history",
@@ -206,14 +230,19 @@ def fetch_market_history_page(market: str, ticker: str, start: int = 0, from_dat
     if till_date:
         params["till"] = str(till_date)
 
+    actual_market = ETF_SNAPSHOT_MARKET if market == "etf" and board else market
+    if board:
+        path = f"/history/engines/stock/markets/{actual_market}/boards/{board}/securities/{ticker}.json"
+    else:
+        path = f"/history/engines/stock/markets/{actual_market}/securities/{ticker}.json"
     payload = _fetch_json(
-        f"/history/engines/stock/markets/{market}/securities/{ticker}.json",
+        path,
         params,
     )
     return _rows_from_block(payload, "history")
 
 
-def iter_market_history(market: str, ticker: str, from_date=None, till_date=None) -> Iterable[dict]:
+def iter_market_history(market: str, ticker: str, from_date=None, till_date=None, board: str | None = None) -> Iterable[dict]:
     start = 0
     while True:
         rows = fetch_market_history_page(
@@ -222,6 +251,7 @@ def iter_market_history(market: str, ticker: str, from_date=None, till_date=None
             start=start,
             from_date=from_date,
             till_date=till_date,
+            board=board,
         )
         if not rows:
             break
@@ -232,8 +262,48 @@ def iter_market_history(market: str, ticker: str, from_date=None, till_date=None
         start += len(rows)
 
 
+def iter_etf_board_snapshots(limit_per_market: int | None = None) -> Iterable[tuple[str, dict]]:
+    seen_tickers: set[str] = set()
+    yielded = 0
+
+    for board in ETF_BOARD_CODES:
+        start = 0
+        while True:
+            rows = fetch_market_snapshot("etf", start=start, board=board)
+            if not rows:
+                break
+            for row in rows:
+                ticker = row.get("ticker")
+                if not ticker or ticker in seen_tickers:
+                    continue
+                if limit_per_market is not None and yielded >= limit_per_market:
+                    return
+                seen_tickers.add(ticker)
+                yield "etf", row
+                yielded += 1
+            if len(rows) < 100:
+                break
+            start += len(rows)
+
+
+def iter_etf_market_history(ticker: str, from_date=None, till_date=None) -> Iterable[dict]:
+    seen_dates = set()
+
+    for board in ETF_BOARD_CODES:
+        for row in iter_market_history("etf", ticker, from_date=from_date, till_date=till_date, board=board):
+            trade_date = _parse_trade_date(row)
+            if trade_date and trade_date in seen_dates:
+                continue
+            if trade_date:
+                seen_dates.add(trade_date)
+            yield row
+
+
 def iter_market_snapshots(markets: Iterable[str], limit_per_market: int | None = None) -> Iterable[tuple[str, dict]]:
     for market in markets:
+        if market == "etf":
+            yield from iter_etf_board_snapshots(limit_per_market=limit_per_market)
+            continue
         start = 0
         yielded_for_market = 0
         while True:
@@ -337,7 +407,11 @@ def sync_moex_price_history(
 
     for instrument in target_instruments:
         market = TYPE_TO_MARKET.get(instrument.normalized_type)
-        if not market:
+        if instrument.normalized_type == Instrument.TYPE_ETF:
+            history_rows = iter_etf_market_history(instrument.ticker, from_date=from_date, till_date=till_date)
+        elif market:
+            history_rows = iter_market_history(market, instrument.ticker, from_date=from_date, till_date=till_date)
+        else:
             history_stats.skipped += 1
             continue
 
@@ -359,7 +433,7 @@ def sync_moex_price_history(
                 captured_at__date__lte=till_date,
             ).delete()
 
-        for row in iter_market_history(market, instrument.ticker, from_date=from_date, till_date=till_date):
+        for row in history_rows:
             trade_date = _parse_trade_date(row)
             price = _extract_history_price(row)
             if trade_date is None or price is None or trade_date in existing_dates:

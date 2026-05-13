@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django import template
 
 from riskapp.i18n import translate
+from riskapp.models import Instrument, Scenario
 
 
 register = template.Library()
@@ -58,3 +59,51 @@ def get_item(mapping, key):
     if mapping is None:
         return None
     return mapping.get(key)
+
+
+@register.simple_tag(takes_context=True)
+def rebalancing_label(context, value):
+    language = context.get("ui_language", "ru")
+    labels = {
+        Scenario.REBALANCE_NONE: "Без ребалансировки" if language == "ru" else "Buy and hold",
+        Scenario.REBALANCE_MONTHLY: "Ежемесячная ребалансировка" if language == "ru" else "Monthly rebalance",
+        Scenario.REBALANCE_QUARTERLY: "Квартальная ребалансировка" if language == "ru" else "Quarterly rebalance",
+    }
+    return labels.get(value, value or "-")
+
+
+@register.simple_tag(takes_context=True)
+def sector_label(context, value):
+    language = context.get("ui_language", "ru")
+    labels = {
+        Instrument.SECTOR_EQUITIES: translate("sector_equities", language),
+        Instrument.SECTOR_BONDS: translate("sector_bonds", language),
+        Instrument.SECTOR_FUNDS: translate("sector_funds", language),
+    }
+    return labels.get(value, value or "-")
+
+
+@register.simple_tag(takes_context=True)
+def preset_label(context, value):
+    language = context.get("ui_language", "ru")
+    labels = {
+        Scenario.PRESET_CUSTOM: "Пользовательский" if language == "ru" else "Custom",
+        Scenario.PRESET_BASE: "Базовый" if language == "ru" else "Base",
+        Scenario.PRESET_OPTIMISTIC: "Оптимистичный" if language == "ru" else "Optimistic",
+        Scenario.PRESET_PESSIMISTIC: "Пессимистичный" if language == "ru" else "Pessimistic",
+        Scenario.PRESET_STRESS: "Стрессовый" if language == "ru" else "Stress",
+        Scenario.PRESET_CRISIS: "Кризисный" if language == "ru" else "Crisis",
+    }
+    return labels.get(value, value or "-")
+
+
+@register.simple_tag(takes_context=True)
+def instrument_type_label(context, value):
+    language = context.get("ui_language", "ru")
+    normalized = str(value or "").strip().lower()
+    labels = {
+        Instrument.TYPE_STOCK: translate("instrument_type_stock", language),
+        Instrument.TYPE_BOND: translate("instrument_type_bond", language),
+        Instrument.TYPE_ETF: translate("instrument_type_etf", language),
+    }
+    return labels.get(normalized, value or "-")
